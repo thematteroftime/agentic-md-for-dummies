@@ -63,31 +63,42 @@ def set_units(name: str = "macro") -> None:
     TIME_UNIT_CONVERSION = UNITS.TIME_UNIT_CONVERSION
 
 
-def _init_taichi(debug: bool, profiler: bool) -> None:
-    """First-or-switch ti.init. MUST run before any field allocation."""
+def _init_taichi(debug: bool, profiler: bool, random_seed=None) -> None:
+    """First-or-switch ti.init. MUST run before any field allocation.
+
+    `random_seed` (int or None): seed forwarded to `ti.init(random_seed=...)`.
+    None means non-deterministic (Taichi default). Tests that rely on
+    `ti.randn()` reproducibility (e.g. Wiener-noise integrator regressions)
+    pass an explicit int.
+    """
     global _TAICHI_INITED, _DEBUG
     if _TAICHI_INITED:
         ti.reset()
+    init_kwargs = dict(
+        default_fp=ti.f64,
+        debug=debug,
+        kernel_profiler=profiler,
+        advanced_optimization=True,
+        fast_math=True,
+        offline_cache=True,
+        offline_cache_file_path=_OFFLINE_CACHE_PATH,
+    )
+    if random_seed is not None:
+        init_kwargs["random_seed"] = int(random_seed)
     try:
-        ti.init(
-            arch=ti.gpu,
-            default_fp=ti.f64,
-            debug=debug,
-            kernel_profiler=profiler,
-            advanced_optimization=True,
-            fast_math=True,
-            offline_cache=True,
-            offline_cache_file_path=_OFFLINE_CACHE_PATH,
-        )
+        ti.init(arch=ti.gpu, **init_kwargs)
         print("[Taichi] Initialized on GPU "
-              f"(debug={debug}, profiler={profiler})")
+              f"(debug={debug}, profiler={profiler}, "
+              f"random_seed={random_seed})")
     except Exception as e:
         print(f"[Taichi] GPU init failed: {e}; falling back to CPU")
         try:
-            ti.init(arch=ti.cpu, default_fp=ti.f64,
-                    debug=debug, kernel_profiler=profiler)
+            cpu_kwargs = {k: v for k, v in init_kwargs.items()
+                          if k in ("default_fp", "debug", "kernel_profiler", "random_seed")}
+            ti.init(arch=ti.cpu, **cpu_kwargs)
             print(f"[Taichi] Initialized on CPU "
-                  f"(debug={debug}, profiler={profiler})")
+                  f"(debug={debug}, profiler={profiler}, "
+                  f"random_seed={random_seed})")
         except Exception as cpu_err:
             print(f"[Taichi] CPU init also failed: {cpu_err}")
             raise
@@ -98,13 +109,19 @@ def _init_taichi(debug: bool, profiler: bool) -> None:
 def reconfigure(units: str = "macro",
                 log: bool = False,
                 debug: bool = False,
-                profiler: bool = False) -> None:
-    """Apply run.in flags. Call BEFORE AtomSystem instantiation."""
+                profiler: bool = False,
+                random_seed=None) -> None:
+    """Apply run.in flags. Call BEFORE AtomSystem instantiation.
+
+    `random_seed` (int or None): forwarded to `ti.init(random_seed=...)` so
+    Wiener-noise integrators can be reproducible. Default None = Taichi's
+    own non-deterministic seeding.
+    """
     global LOG, PROFILER
     set_units(units)
     LOG = log
     PROFILER = profiler
-    _init_taichi(debug, profiler)
+    _init_taichi(debug, profiler, random_seed=random_seed)
 
 
 # Module-load defaults: macro units + production Taichi flags.

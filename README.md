@@ -42,7 +42,7 @@ It ships with two **end-to-end reproductions** of recent complex-plasma papers a
 | | |
 |---|---|
 | 🧱 **4-layer architecture** | Config → Adapter → Platform → Infrastructure. Each layer talks only to the one below it. |
-| 🤖 **AI skill** | A Claude Code skill (`paper-to-experiment`) that walks a paper into a validated config in 7 steps, with an 8-step extension flow when a new force / analyzer / plotter / aggregator is required. |
+| 🤖 **AI skill** | A Claude Code skill (`paper-to-experiment`) that walks a paper into a validated config in 7 steps, with an 8-step extension flow for new force / analyzer / plotter / aggregator and a 9-step flow for a new time integrator. |
 | 📋 **Schema-validated configs** | JSON Schema + physics rules + budget guards. Bad configs fail before any GPU is touched. |
 | 🔌 **Class-name dispatch** | Add a new analyzer / visualizer / aggregator? One file + one registry line. No central if-else. |
 | 🧪 **Layered testing** | Schema gate, manifest gate, registry gate, runtime gate. Every contract has an enforcement point. |
@@ -95,8 +95,9 @@ The framework is **strictly four-layered**. Each layer talks only to the one bel
 ║  scripts/run_experiment.py — orchestrator                              ║     OWNS this
 ║  tools/ — analyzers, plotters, aggregators, visualizers, registry      ║
 ╠══════════════════════════════════════════════════════════════════════╣
-║  Layer 1 — INFRASTRUCTURE  (Taichi MD core, frozen)                   ║
-║  systemClass, atomSystemClass, integratorClass, searchBox, forceField  ║
+║  Layer 1 — INFRASTRUCTURE  (Taichi MD core; math frozen,              ║
+║  structural extensions OK via forces/ + integrators/ packages)         ║
+║  systemClass, atomSystemClass, searchBox, forces/, integrators/, ...   ║
 ╚══════════════════════════════════════════════════════════════════════╝
 ```
 
@@ -349,10 +350,10 @@ md-for-dummies/
 ├── prx_nonreciprocal_run.py        Layer 3 adapter — PRX 2015
 ├── er_plasma_run.py                Layer 3 adapter — PRL 2008
 │
-├── forces/                         Layer 1 — one file per force class (HertzianNonreciprocal, ERPotential, LJ)
+├── forces/                         Layer 1 — one file per force class (HertzianNonreciprocal, ERPotential, LJ, KobAndersenLJ)
+├── integrators/                    Layer 1 — one file per integrator scheme (BAOABDrag, BAOABLangevin)
 ├── systemClass.py                  Layer 1 — MD orchestrator
 ├── atomSystemClass.py              Layer 1 — particle state
-├── integratorClass.py              Layer 1 — BAOAB
 ├── searchBox.py                    Layer 1 — cell-list / O(N²) neighbor table
 ├── constSet.py                     Layer 1 — units (reduced / macro)
 ├── toolClass.py                    backward-compat shim for the tools/ split

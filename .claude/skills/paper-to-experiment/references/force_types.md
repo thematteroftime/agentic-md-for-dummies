@@ -167,8 +167,9 @@ The `N` convention column is the most common footgun — `hertzian_nonreciprocal
 - **Cutoff**: paper-defined truncate-and-shift at `2.5·σ_pq` per pair. Adapter sets `cutoff = 2.5·σ_AA = 2.5` (the largest). `cutoffNegh ≈ 1.15·cutoff`.
 - **Engine limitations** (documented in design doc §11):
   - No NPT — paper's coexistence-line method (Fig.1, §III) is NOT reproducible. Use NVT-Langevin at fixed ρ and target qualitative observables (RDF structure, MSD trend).
-  - BAOAB has drag, no Wiener noise. MSD plateaus at low T are an *engine* artifact, not physics. Report dynamics as qualitative only.
-- **Lattice**: simple-cubic IC will be far from KA equilibrium (FCC for pure-A); short equilibration is built-in via Langevin damping but RDF measurement should use the LATE third of the trajectory, not the early frames.
+  - With `integrator: baoab_drag`, the O step has no Wiener noise → MSD plateaus at low T (engine artifact). Use `integrator: baoab_langevin` (FD-balanced) for diffusion-relevant runs; the campaign config must then set `T_target` per state point (schema enforces).
+- **Lattice-release temperature spike**: simple-cubic IC at the KA σ_AA spacing puts every atom near the steep wall of the LJ potential. On step 1 the lattice-PE → KE conversion produces `T_init ≈ 2.5·T_target` (observed, not theoretical). With `baoab_langevin` at nu=0.1, FD damping absorbs this in ~50 τ. Analyzers should measure `T_meas` over the LATE half of the trajectory, never from the first few frames.
+- **Lattice equilibration window**: simple-cubic is far from KA equilibrium (the equilibrium is amorphous-supercooled or FCC depending on T). Use the LAST 1/3 of the trajectory for RDF measurement; the first 1/3 is dominated by lattice-melt transients.
 
 ### Example
 
@@ -177,6 +178,8 @@ The `N` convention column is the most common footgun — `hertzian_nonreciprocal
   "force_type": "kalj",
   "tag": "T10_rho12",
   "T0": 1.0,
+  "T_target": 1.0,
+  "integrator": "baoab_langevin",
   "rho": 1.2,
   "N": 1000,
   "fraction_B": 0.20,
@@ -338,14 +341,25 @@ The flow mirrors the 8-step force extension but adds one extra step to wire the 
 5. **Schema**
    - Add the scheme name to the `integrator` enum in `templates/plan_config.schema.json`.
    - If the scheme requires extra fields (e.g. `T_target`), declare them as schema properties (already partially done — see existing `T_target` field) and add a conditional `if/then` in `allOf` requiring the field when `integrator: <scheme>` is set.
+   - **Important conditional shape**: a JSON-Schema `if` clause vacuously matches when the property is absent. To make the conditional fire only for entries that DO carry `integrator: <scheme>`, the `if` must require both the field's presence AND its value:
+     ```json
+     {
+       "if": {
+         "properties": {"integrator": {"const": "<scheme>"}},
+         "required": ["integrator"]
+       },
+       "then": {"required": ["T_target"]}
+     }
+     ```
+     Without `"required": ["integrator"]` the `if` matches every campaign entry that simply omits `integrator` entirely, and the `then` clause silently constrains entries that the author never intended.
 
-6. **Validator (optional but recommended)**
-   - If the scheme has a stability rule (e.g. `dt × ω_max < 0.1`), encode it in `scripts/validate_config.py:check_force_type_specific` (or a parallel `check_integrator_specific` function) so misconfigured campaigns fail validation, not at runtime.
+6. **Validator (recommended; scaffold already wired)**
+   - `scripts/validate_config.py:check_integrator_specific(cfg, res)` is the dedicated hook called from `main()` alongside `check_force_type_specific`. Add a new `if scheme == "<your_scheme>":` branch inside it for stability rules (e.g. `dt × ω_max < 0.1`, `T_target` vs `T0` sanity), notes about lattice-release temperature spikes, etc. The function exists; you only edit one branch.
 
 7. **Adapter wiring**
-   - Each per-paper adapter that wants to use the new integrator imports the class and passes it to `systemRun(..., integrator=<NewClass>, ...)`.
-   - Build `inteParams` dict from the campaign-entry fields the integrator's `REQUIRED_KWARGS` declares.
-   - Existing adapters using `BAOABDrag` are unaffected — they keep their `from integrators import BAOABDrag as integrator` import.
+   - Each per-paper adapter dispatches the integrator class by name from the campaign entry: `IntCls = INTEGRATOR_REGISTRY[exp.get("integrator", "baoab_drag")]`. Build `inteParams` from the integrator's `REQUIRED_KWARGS` class attribute — adapter is integrator-agnostic, no string-match magic. The dispatch pattern lives in `pedersen_kalj_run.py` for reference.
+   - Local variable name: prefer `integrator_cls` (the class) and `integrator_inst` (the instance) over the legacy shadowing `from integrators import BAOABDrag as integrator`. The adapter template (`templates/adapter_run.py.template`) shows the new pattern.
+   - Existing adapters that still import `BAOABDrag as integrator` work fine — the rename is opt-in until they want to dispatch by config.
 
 8. **Registry doc**
    - Add a row to the **Integrator selection** table in §4 above with: scheme name, one-line description, "use when", "caveats".

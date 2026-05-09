@@ -126,6 +126,9 @@ def _write_run_in(p, suffix):
         f.write(f"units      reduced\n")
         f.write(f"profiler   off\n")
         f.write(f"nu         {p['nu']}\n")
+        f.write(f"integrator {p.get('integrator', 'baoab_drag')}\n")
+        if p.get("T_target") is not None:
+            f.write(f"T_target   {p['T_target']}\n")
     return run_in_path
 
 
