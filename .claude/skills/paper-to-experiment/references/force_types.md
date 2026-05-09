@@ -4,6 +4,17 @@ Authoritative source for which `force_type` strings are valid in `configs/plan_*
 
 When adding a new force type, follow §4 below (8-step extension) — registry is the gatekeeper, schema and skill follow.
 
+## Conventions table
+
+Per-force-type conventions that are easy to mix up. **Read this before writing the campaign config.**
+
+| force_type | `N` means | default IC | ndim | units_regime |
+|------------|-----------|-----------|------|--------------|
+| `hertzian_nonreciprocal` | **per-species** count (total = 2N — see §1) | from-file lattice | 3 | `reduced_lj` |
+| `er_plasma` | total particle count | from-file lattice (`xyz_1000_3.in`) | 3 | `macro_dust` |
+
+The `N` convention column is the most common footgun — `hertzian_nonreciprocal` is the only force_type where `N` is per-species. Future binary mixtures should document N as **total** unless there's a strong reason otherwise.
+
 ---
 
 ## 1. `hertzian_nonreciprocal`  (PRX 2015)

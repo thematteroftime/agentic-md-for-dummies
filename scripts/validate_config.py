@@ -185,21 +185,35 @@ def check_physics_provenance(cfg, res: Result):
         res.warn("missing '_comment' — one-paragraph rationale prevents future you from forgetting why")
 
 
-def _step_rate(N_total: int, cho: int) -> int:
+_STEP_RATE_MULTIPLIER = {
+    # force_type-specific kernel cost multiplier vs the PRX baseline below.
+    # 1.0 = same cost; >1 = cheaper (faster step rate); <1 = more expensive.
+    # Calibrate against a real run by reading manifest.json:wall_seconds.
+    "hertzian_nonreciprocal": 1.0,    # baseline (the anchor below was measured against PRX)
+    "er_plasma":              1.0,    # anisotropic Yukawa, similar cost
+    # New force_types may add their own factor here. Defaults to 1.0 (PRX
+    # baseline) when missing — over-estimate is safer than under-estimate.
+}
+
+
+def _step_rate(N_total: int, cho: int, force_type: str | None = None) -> int:
     """Step rate (step/s) calibrated from real outputFiles/*/manifest.json data.
     Anchor points: E1v3 N_tot=20000 cho=1 → 326 step/s; ER N=1000 cho=2 → ~500 step/s.
+    Per-force-type multipliers in `_STEP_RATE_MULTIPLIER` adjust the baseline.
     """
     if cho == 1:  # cell-list, near-linear in N
-        if N_total <= 1000:  return 500
-        if N_total <= 5000:  return 400
-        if N_total <= 20000: return 300
-        if N_total <= 50000: return 150
-        return 60
+        if   N_total <= 1000:  base = 500
+        elif N_total <= 5000:  base = 400
+        elif N_total <= 20000: base = 300
+        elif N_total <= 50000: base = 150
+        else:                  base = 60
     else:  # cho=2, O(N^2)
-        if N_total <= 1000:  return 500
-        if N_total <= 3000:  return 200
-        if N_total <= 10000: return 50
-        return 15
+        if   N_total <= 1000:  base = 500
+        elif N_total <= 3000:  base = 200
+        elif N_total <= 10000: base = 50
+        else:                  base = 15
+    factor = _STEP_RATE_MULTIPLIER.get(force_type or "", 1.0)
+    return max(1, int(base * factor))
 
 
 def estimate_costs(cfg, res: Result):
@@ -216,7 +230,7 @@ def estimate_costs(cfg, res: Result):
         max_N_total = max(max_N_total, N_tot)
         threshold = cfg.get("_cell_list_threshold_N", DEFAULT_CELL_LIST_THRESHOLD_N)
         cho = exp.get("cho", 1 if N_tot > threshold else 2)
-        rate = _step_rate(N_tot, cho)
+        rate = _step_rate(N_tot, cho, exp.get("force_type"))
         steps = exp.get("steps", 0)
         per_run_walls.append(steps / rate / 3600)
 

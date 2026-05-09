@@ -331,13 +331,29 @@ def stage_analyze(run_dir, analyzer_class="PRXAnalyzer", params=None):
 def stage_visualize(run_dir, visualizer_class, params=None):
     """Optional visualisation stage, dispatched by class name from config.
     Skipped when no visualizer_class is configured.
+
+    Resolution preference:
+    1. If the class has a static/classmethod `render` → call it directly with
+       `(run_dir, **params)`. This is the canonical plotter pattern (see
+       templates/plotter.py.template) and avoids needing a no-arg __init__.
+    2. Else, instantiate with `**params` and call `.render(run_dir)` or
+       `.show(run_dir)` (back-compat for `TaichiTrajectoryViz`-style classes
+       that hold instance state).
     """
     if not visualizer_class:
         return None
     print(f"[visualize] {run_dir}  (class={visualizer_class})")
     from tools.registry import resolve
     VizCls = resolve(visualizer_class)
-    inst = VizCls(**(params or {}))
+    params = params or {}
+
+    # Path 1: class-method dispatch (preferred for paper plotters).
+    render_attr = VizCls.__dict__.get("render")
+    if isinstance(render_attr, (staticmethod, classmethod)):
+        return VizCls.render(run_dir, **params)
+
+    # Path 2: instance dispatch (back-compat for visualizers with __init__).
+    inst = VizCls(**params)
     if hasattr(inst, "render"):
         return inst.render(run_dir)
     if hasattr(inst, "show"):
@@ -531,6 +547,23 @@ def run_pipeline(cfg, smoke_override=None, no_aggregate=False,
                 cfg["campaign"], max_parallel, halt)
 
     print(f"\n[pipeline] {len(completed)}/{len(cfg['campaign'])} runs completed")
+
+    # Phase 3.4: per-run analysis (optional, class-dispatched via tools.registry).
+    # Triggers when BOTH `pipeline.analyze=True` AND `pipeline.analyzer_class` is set.
+    # Existing PRX/ER configs that set analyze=True without an explicit analyzer_class
+    # are unaffected — they ran the analyzer inline in the adapter, so this phase
+    # remains opt-in to avoid duplicate work.
+    analyzer_class = pipeline.get("analyzer_class")
+    if pipeline.get("analyze") and analyzer_class and completed:
+        print(f"\n=== Phase 3.4: ANALYZE (class={analyzer_class}) ===")
+        for rd in completed:
+            try:
+                stage_analyze(rd, analyzer_class, pipeline.get("analyzer_params"))
+            except Exception as e:
+                print(f"[analyze] error on {rd}: {e}")
+                if halt:
+                    print(f"[pipeline] analyze failed — halt")
+                    return completed
 
     # Phase 3.5: per-run visualization (optional, class-dispatched via tools.registry)
     viz_cfg = pipeline.get("visualize", {}) if isinstance(pipeline.get("visualize"), dict) else {}

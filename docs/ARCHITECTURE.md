@@ -301,7 +301,7 @@ These were resolved by the framework maintainer in auto-mode. Override at any ti
 | **D2** | Adapter shape | **Function-based** (script with `main()` + CLI args) | Class-based (subclass `BaseAdapter`) |
 | **D3** | Adapter dispatch | **Subprocess** (each entry script in fresh Python) | In-process import |
 | **D4** | Registry single source | **`tools/registry.py`** | Skill-side `force_types.md` (now references registry) |
-| **D5** | Analyzer auto-invoke | **Platform decides** via Phase 3.5/4 | Adapter calls in-process |
+| **D5** | Analyzer auto-invoke | **Platform decides** via Phase 3.4 ANALYZE | Adapter calls in-process |
 | **D6** | Output of analyzer | **Returns `dict`**, platform writes report | Analyzer writes report itself |
 | **D7** | Multi-run config | **Single JSON listing campaign entries** | One JSON per entry + glob |
 | **D8** | Communication channel | **`manifest.json` + stdout** | RPC / shared memory |

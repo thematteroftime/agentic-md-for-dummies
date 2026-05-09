@@ -45,6 +45,38 @@ Add as many rows as needed. If observable is **derived** (not directly in paper)
 
 ---
 
+## §1.5 Analyzer / plotter / aggregator contract
+
+Each observable in §1 must be measurable by an **analyzer** class, plotted by a **plotter** class, and (for cross-run questions) summarized by an **aggregator** class. SKILL Hard rule #9 requires every production run dir to contain `report.md` + at least one `fig*.png` — the analyzer writes the report, the plotter writes the figures.
+
+### Analyzer  (`tools/analyzers/<topic>.py:<Paper>Analyzer`)
+
+- **Method**: `full_analysis(run_dir, **params) -> dict`  *(staticmethod)*
+- **Side effect**: writes `<run_dir>/report.md` summarizing every metric.
+- **Side effect (optional)**: writes `<run_dir>/<metric>.npz` for the plotter to consume cheaply.
+- **Returns**: dict with keys
+  - `"verdict"`: one of `"PASS" / "NEAR" / "FAIL"` per the §6 thresholds.
+  - one key per measured metric (numeric or short string).
+  - `"params"`: echo of input `params` for audit trail.
+- **Trigger**: pipeline Phase 3.4 ANALYZE invokes this when both `pipeline.analyze=true` AND `pipeline.analyzer_class` are set in the config.
+
+### Plotter  (`tools/plotters/<topic>.py:<Paper>Plotter`)
+
+- **Method**: `render(run_dir, **params) -> None`  *(staticmethod)*
+- **Side effect**: writes ≥1 `<run_dir>/figN_*.png`. Required by Hard rule #9.
+- **Optional methods**: `fig_<name>(records, out_path, **params)` for cross-run figures, called by the aggregator.
+- **Trigger**: pipeline Phase 3.5 VISUALIZE invokes `render` per run dir when `pipeline.visualize.class` is set.
+
+### Aggregator  (`tools/aggregators/<topic>.py:<Paper>Aggregator`)
+
+- **Method**: `aggregate(run_dirs, output, plots, title, **params) -> None`  *(staticmethod)*
+- **Side effect**: writes the master report at `output` (e.g. `docs/<paper>_campaign_report.md`) and renders each named cross-run figure to `docs/images/<paper>_<plot>.png` by calling `<Paper>Plotter.fig_<plot>`.
+- **Trigger**: pipeline Phase 4 AGGREGATE invokes this when `aggregation.enabled=true` and `aggregation.class` is set.
+
+Templates live at `templates/{analyzer,plotter,aggregator}.py.template`. Worked references: `tools/analyzers/prx.py`, `tools/plotters/prx.py`, `tools/aggregators/prx.py`.
+
+---
+
 ## §2 Force field
 
 - **name**: `<HertzianNonreciprocal | ERPotential | NEW>`

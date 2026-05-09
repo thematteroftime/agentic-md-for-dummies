@@ -1,14 +1,23 @@
-"""<MyAnalyzer> — paper-specific post-run analysis.
+"""MyAnalyzer — paper-specific post-run analysis.
 
 Implements the analyzer contract from docs/ARCHITECTURE.md §3.3:
   full_analysis(run_dir, **params) -> dict
 
 To activate:
   1. Save this file as `tools/analyzers/<topic>.py`
-  2. Register in `tools/registry.py`:
-       _REGISTRY["<MyAnalyzer>"] = "tools.analyzers.<topic>:<MyAnalyzer>"
-  3. Reference in your config:
-       "pipeline": {"analyzer_class": "<MyAnalyzer>", "analyzer_params": {...}}
+  2. **RENAME** the class `MyAnalyzer` below to `<PaperSlug>Analyzer` (e.g. `PedersenAnalyzer`).
+  3. Register in `tools/registry.py:_REGISTRY`:
+       "<PaperSlug>Analyzer": "tools.analyzers.<topic>:<PaperSlug>Analyzer"
+  4. Mirror the registration in `tools/analyzers/__init__.py`.
+  5. Reference in your config:
+       "pipeline": {"analyze": true, "analyzer_class": "<PaperSlug>Analyzer", "analyzer_params": {...}}
+  6. The pipeline's Phase 3.4 ANALYZE will call `full_analysis(run_dir, **params)` per run dir.
+
+Return-dict contract (see physics_design.md §1.5 "Analyzer contract"):
+  - REQUIRED: "verdict" ∈ {"PASS", "NEAR", "FAIL"}, one key per measured metric
+  - REQUIRED: "params" — echo of input params for audit trail
+  - REQUIRED side effect: write `<run_dir>/report.md` summarizing the metrics
+  - OPTIONAL: write `<run_dir>/<metric>.npz` for the plotter to consume
 """
 from __future__ import annotations
 from pathlib import Path
@@ -18,7 +27,7 @@ import numpy as np
 import h5py
 
 
-class <MyAnalyzer>:
+class MyAnalyzer:                          # RENAME this class — see header comment
     """Paper <CITATION> analyzer.
 
     Computes the observables defined in your design doc §1:
@@ -27,8 +36,8 @@ class <MyAnalyzer>:
     """
 
     # Paper-derived constants (from docs/specs/<topic>-design.md §1)
-    PAPER_<METRIC_1> = <VALUE>          # cite paper Eq.(N)
-    TOLERANCE = 0.10                    # 10% pass threshold
+    PAPER_METRIC_1 = 1.0                   # cite paper Eq.(N) — replace
+    TOLERANCE = 0.10                       # 10% pass threshold
 
     @staticmethod
     def load_run(run_dir):
@@ -44,27 +53,35 @@ class <MyAnalyzer>:
 
     @staticmethod
     def full_analysis(run_dir, **params):
-        """REQUIRED contract method.
+        """REQUIRED contract method called by pipeline Phase 3.4 ANALYZE.
 
-        Reads run_dir, computes all paper observables, returns dict containing:
+        Reads run_dir, computes all paper observables, writes report.md to
+        run_dir, returns dict containing:
           - "verdict": "PASS" / "NEAR" / "FAIL"
           - one key per metric with its value
           - "params": echo of input params (for audit trail)
         """
-        rec = <MyAnalyzer>.load_run(run_dir)
+        rec = MyAnalyzer.load_run(run_dir)
 
-        # Compute observables (TODO: replace with real physics)
+        # Compute observables (replace with real physics)
         metric_1 = float(np.mean(rec["time"]))    # placeholder
-        # metric_2 = ...
 
-        # Verdict
-        err_1 = abs(metric_1 - <MyAnalyzer>.PAPER_<METRIC_1>) / <MyAnalyzer>.PAPER_<METRIC_1>
-        if err_1 <= <MyAnalyzer>.TOLERANCE:
+        err_1 = abs(metric_1 - MyAnalyzer.PAPER_METRIC_1) / MyAnalyzer.PAPER_METRIC_1
+        if err_1 <= MyAnalyzer.TOLERANCE:
             verdict = "PASS"
-        elif err_1 <= 2 * <MyAnalyzer>.TOLERANCE:
+        elif err_1 <= 2 * MyAnalyzer.TOLERANCE:
             verdict = "NEAR"
         else:
             verdict = "FAIL"
+
+        # Write per-run report. The plotter expects `<run_dir>/report.md` to exist.
+        report = (
+            f"# Run analysis — {Path(run_dir).name}\n\n"
+            f"- verdict: **{verdict}**\n"
+            f"- metric_1: {metric_1:.4f} (paper: {MyAnalyzer.PAPER_METRIC_1}, "
+            f"err {err_1*100:.1f}%)\n"
+        )
+        (Path(run_dir) / "report.md").write_text(report, encoding="utf-8")
 
         return {
             "verdict": verdict,

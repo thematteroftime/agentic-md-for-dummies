@@ -116,6 +116,8 @@ Generate `configs/plan_<topic>.json` from the approved design doc. Required top-
     "smoke": true,
     "smoke_steps": 100,
     "production": true,
+    "analyze": true,
+    "analyzer_class": "<paper>Analyzer",
     "halt_on_fail": true,
     "max_parallel": <2 default>,
     "visualize": {"enabled": true, "class": "<paper>Plotter"}
@@ -131,7 +133,9 @@ Generate `configs/plan_<topic>.json` from the approved design doc. Required top-
 
 Each campaign entry must contain ONLY fields listed in `references/force_types.md` for the chosen `force_type`. Add `notes` field with one-line rationale linked to the design doc §.
 
-`pipeline.visualize.class` and `aggregation.class` MUST point to classes registered in `tools/registry.py:_REGISTRY`. If the paper requires bespoke analysis, **register** the new analyzer/visualizer classes via the 8-step extension process before emitting the config — see Hard rule #9.
+`pipeline.analyzer_class`, `pipeline.visualize.class`, and `aggregation.class` MUST point to classes registered in `tools/registry.py:_REGISTRY`. If the paper requires bespoke analysis, **register** the new analyzer / plotter / aggregator classes via the 8-step extension process before emitting the config — see Hard rule #9.
+
+Pipeline phases run in this order: preflight → smoke → production → **analyze (3.4)** → **visualize (3.5)** → aggregate. Phase 3.4 ANALYZE only fires when both `analyze=true` AND `analyzer_class` are set; existing PRX/ER configs that ran the analyzer inline in their adapters omit `analyzer_class` and skip the phase.
 
 ### Step 6 — Validate
 

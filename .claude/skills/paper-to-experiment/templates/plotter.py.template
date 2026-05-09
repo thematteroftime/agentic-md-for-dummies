@@ -1,19 +1,30 @@
-"""<MyPlotter> — paper-specific publication figure builder.
+"""MyPlotter — paper-specific per-run figure builder.
 
 Implements the plotter contract from docs/ARCHITECTURE.md §3.5:
-  static fig_<name>(records, out_path, **params)
-
-Each fig_<name> method produces ONE publication figure. Multiple methods
-are typical (one per thesis section). Aggregator script picks methods by
-short name from `pipeline.aggregation.plots: ["fig1", "fig2", ...]`.
+  static render(run_dir, **params) -> None        # primary, called by Phase 3.5
+  static fig_<name>(records, out_path, **params)  # cross-run figs (used by aggregator)
 
 To activate:
-  1. Save as `tools/plotters/<topic>.py`
-  2. Register in `tools/registry.py`:
-       _REGISTRY["<MyPlotter>"] = "tools.plotters.<topic>:<MyPlotter>"
+  1. Save this file as `tools/plotters/<topic>.py`
+  2. **RENAME** the class `MyPlotter` below to `<PaperSlug>Plotter`.
+  3. Register in `tools/registry.py:_REGISTRY`:
+       "<PaperSlug>Plotter": "tools.plotters.<topic>:<PaperSlug>Plotter"
+  4. Mirror in `tools/plotters/__init__.py`.
+  5. Reference in your config:
+       "pipeline": {"visualize": {"enabled": true, "class": "<PaperSlug>Plotter"}}
+  6. Phase 3.5 VISUALIZE will call `<PaperSlug>Plotter.render(run_dir, **params)` per run dir.
+
+Plotter contract:
+  - REQUIRED: `render(run_dir, **params)` — write `<run_dir>/figN_*.png` files
+  - REQUIRED side effect: produce ≥1 png per run dir (SKILL Hard rule #9)
+  - OPTIONAL: `fig_<name>(records, out_path, **params)` for cross-run figures
+    consumed by `<PaperSlug>Aggregator.aggregate`
+  - The pipeline calls `render` as a class-method (not via instantiation), so
+    keep it a staticmethod / classmethod — do not require __init__ args.
 """
 from __future__ import annotations
 from pathlib import Path
+import json
 
 import numpy as np
 import matplotlib
@@ -21,33 +32,55 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 
-class <MyPlotter>:
+class MyPlotter:                            # RENAME this class — see header comment
     """Paper <CITATION> figure builder."""
 
     @staticmethod
-    def fig1_<topic>(records, out_path, title: str = "Figure 1", **params):
-        """REQUIRED contract method (rename per topic).
+    def render(run_dir, **params):
+        """REQUIRED contract method called by Phase 3.5 VISUALIZE.
 
-        records:  list of dicts from <MyAnalyzer>.load_run()
+        Reads `<run_dir>/<metric>.npz` (written by analyzer) or HDF5 directly,
+        produces `<run_dir>/figN_*.png` files. Must produce at least one png
+        per run dir to satisfy SKILL Hard rule #9.
+        """
+        run_dir = Path(run_dir)
+
+        # Example: read analyzer output (or fall back to raw h5)
+        # data_npz = np.load(run_dir / "metric_1.npz")
+        # x = data_npz["x"]
+        # y = data_npz["y"]
+        x = np.linspace(0, 1, 50)            # placeholder
+        y = np.sin(2 * np.pi * x)            # placeholder
+
+        fig, ax = plt.subplots(figsize=(7, 5))
+        ax.plot(x, y, label="<observable>")
+        ax.set_xlabel("<x label>")
+        ax.set_ylabel("<y label>")
+        ax.legend()
+        ax.grid(alpha=0.3)
+        plt.tight_layout()
+        out_path = run_dir / "fig1_main.png"
+        plt.savefig(out_path, dpi=140, bbox_inches="tight")
+        plt.close(fig)
+        print(f"[plotter] wrote {out_path}")
+
+    @staticmethod
+    def fig_overview(records, out_path, **params):
+        """OPTIONAL cross-run figure called by the aggregator.
+
+        records:  list of dicts from MyAnalyzer.load_run()
         out_path: where to write the .png
-        params:   forwarded from pipeline.aggregation.plot_params
+        params:   forwarded from aggregator.plot_params
         """
         fig, ax = plt.subplots(figsize=(7, 5))
         for rec in records:
             tag = rec["manifest"].get("tag", "?")
-            # TODO: plot rec data
             ax.plot(rec["time"], np.zeros_like(rec["time"]), label=tag)
         ax.set_xlabel("t")
         ax.set_ylabel("<observable>")
-        ax.set_title(title)
         ax.legend()
         ax.grid(alpha=0.3)
         plt.tight_layout()
         plt.savefig(out_path, dpi=140, bbox_inches="tight")
         plt.close(fig)
         print(f"[plotter] wrote {out_path}")
-
-    @staticmethod
-    def fig2_<another>(records, out_path, **params):
-        """TODO: another paper figure (replicate paper Fig.N or Fig.M)."""
-        raise NotImplementedError
