@@ -28,39 +28,39 @@ class ERAggregator:
 
     @staticmethod
     def aggregate(run_dirs, output: str | Path, plots: list[str],
-                   title: str, **params) -> None:
+                   title: str, short_run_dirs=None, **params) -> None:
         """REQUIRED contract method (§3.5).
 
-        ⚠ CONTRACT NOTE — `run_dirs` is IGNORED by this aggregator.
-        ER plasma analysis pulls from hardcoded SHORT_RUNS / LONG_RUNS lists
-        in scripts/analyze_er.py because per-paper-Plan campaigns (G / G2 / G3)
-        define the cross-run scope, not the platform's `completed` list.
-        New ER campaigns extend SHORT_RUNS / LONG_RUNS in scripts/analyze_er.py.
+        run_dirs:       long-time runs (used for 'long' and 'length' plots)
+        short_run_dirs: optional short-window runs (used for 'chain' plots and
+                        for the side-by-side short/long comparison in 'long')
+        plots:          subset of {"chain", "long", "length", "all"}
 
-        plots: subset of {"chain", "long", "length"}; "all" runs the trio.
+        Each dir must contain a manifest.json with `tag` and `MT` fields.
+        The aggregator translates run_dirs → analyze_er's expected
+        (label, dirname, MT) tuple format via runs_from_dirs().
         """
-        from analyze_er import task_chain, task_long, task_length
-
-        if run_dirs:
-            print(f"[aggregate/ER] WARNING: {len(run_dirs)} run_dirs passed "
-                   f"but ER aggregator ignores them (uses hardcoded lists in "
-                   f"scripts/analyze_er.py:SHORT_RUNS/LONG_RUNS). To extend, "
-                   f"edit those constants directly.")
+        from analyze_er import (task_chain, task_long, task_length,
+                                  runs_from_dirs)
 
         invalid = [p for p in plots if p not in ERAggregator.KNOWN_PLOTS]
         if invalid:
             print(f"[aggregate/ER] unknown plot keys {invalid}; "
                   f"valid: {ERAggregator.KNOWN_PLOTS}")
 
+        long_runs = runs_from_dirs(run_dirs) if run_dirs else []
+        short_runs = runs_from_dirs(short_run_dirs) if short_run_dirs else []
+
         if "chain" in plots or "all" in plots:
-            print("[aggregate/ER] running 'chain' (Plan G short snapshot, fig11-13)...")
-            task_chain()
+            print(f"[aggregate/ER] running 'chain' on {len(short_runs)} runs (fig11-13)...")
+            task_chain(runs=short_runs or long_runs)
         if "long" in plots or "all" in plots:
-            print("[aggregate/ER] running 'long' (Plan G2/G3 long-time, fig14-16)...")
-            task_long()
+            print(f"[aggregate/ER] running 'long' on "
+                   f"{len(short_runs)} short + {len(long_runs)} long (fig14-16)...")
+            task_long(short=short_runs, long_=long_runs)
         if "length" in plots or "all" in plots:
-            print("[aggregate/ER] running 'length' (chain length stats, fig17)...")
-            task_length()
+            print(f"[aggregate/ER] running 'length' on {len(long_runs)} long runs (fig17)...")
+            task_length(runs=long_runs)
 
         ERAggregator._write_master_summary(output, title, plots)
 

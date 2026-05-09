@@ -2,17 +2,22 @@
 """ER plasma analysis — single CLI entry, three sub-analyses.
 
 Subcommands:
-    chain   — short-window snapshot (5 MT values, fig11-13)
-    long    — long-time + phase diagram (6 MT values, fig14-16)
+    chain   — short-window snapshot (fig11-13)
+    long    — long-time + phase diagram (fig14-16)
     length  — chain-length distribution (fig17)
     all     — run all three
 
 Outputs go to docs/images/fig*.png and docs/PRL2008_*.md. The class form
 (`tools.analyzers.er.ERAnalyzer`) wraps the same task functions for use by
 the platform's Phase 4 (aggregate) dispatcher.
+
+Runs are supplied in two ways:
+  1. CLI:        python scripts/analyze_er.py long --runs outputFiles/2026*_ER*L_*
+  2. Aggregator: ERAggregator passes its `run_dirs` argument verbatim
 """
 from __future__ import annotations
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -26,22 +31,51 @@ ROOT = Path(__file__).resolve().parent.parent
 DOC_IMG = ROOT / "docs" / "images"
 OUT_DIR = ROOT / "outputFiles"
 
-# -------------------- run registry --------------------
-SHORT_RUNS = [
-    ("ER1", "20260507_141218_ER1_MT00", 0.0),
-    ("ER2", "20260507_141218_ER2_MT04", 0.4),
-    ("ER3", "20260507_141403_ER3_MT06", 0.6),
-    ("ER4", "20260507_141404_ER4_MT08", 0.8),
-    ("ER5", "20260507_141554_ER5_MT10", 1.0),
-]
-LONG_RUNS = [
-    ("ER1L", "20260507_142444_ER1L_MT00", 0.0),
-    ("ER2L", "20260507_150959_ER2L_MT04", 0.4),
-    ("ER3L", "20260507_150959_ER3L_MT06", 0.6),
-    ("ER4L", "20260507_142444_ER4L_MT08", 0.8),
-    ("ER6L", "20260507_151341_ER6L_MT09", 0.9),
-    ("ER5L", "20260507_142735_ER5L_MT10", 1.0),
-]
+# Default run lists are empty in the OSS distribution. Populate via the CLI
+# `--runs` flag or via ERAggregator's `run_dirs` argument. The platform reads
+# manifest.json from each supplied dir to extract the (label, MT) pair.
+SHORT_RUNS: list[tuple[str, str, float]] = []
+LONG_RUNS: list[tuple[str, str, float]] = []
+
+
+def runs_from_dirs(run_dirs):
+    """Translate a list of run directory paths into the (label, dirname, MT)
+    tuple format the task functions expect.
+
+    Each dir must contain a manifest.json with `tag` and `MT` (or `T0`-style
+    paper-specific key). Falls back to dir basename + MT=0 if manifest missing.
+    """
+    out = []
+    for rd in run_dirs:
+        rd = Path(rd)
+        manifest_path = rd / "manifest.json"
+        label = rd.name
+        MT = 0.0
+        if manifest_path.exists():
+            try:
+                m = json.loads(manifest_path.read_text(encoding="utf-8"))
+                label = m.get("tag", rd.name)
+                MT = float(m.get("MT", 0.0))
+            except Exception as e:
+                print(f"[runs_from_dirs] warn: cannot parse {manifest_path}: {e}")
+        # The dirname stored is relative to OUT_DIR if rd is under OUT_DIR,
+        # else absolute. Task functions resolve via OUT_DIR / dirname.
+        try:
+            dirname = str(rd.relative_to(OUT_DIR))
+        except ValueError:
+            dirname = str(rd)
+        out.append((label, dirname, MT))
+    return out
+
+
+def _expand_glob(patterns):
+    """CLI helper: expand shell-style globs (relative to project root) into
+    a sorted list of existing dirs."""
+    dirs = []
+    for pat in patterns:
+        matches = sorted(ROOT.glob(pat))
+        dirs.extend(p for p in matches if p.is_dir())
+    return dirs
 
 # -------------------- shared geometry --------------------
 BOX_MM = 3.0
@@ -133,11 +167,15 @@ def find_chains(pos, r_lo=CHAIN_LINK_R_LO, r_hi=CHAIN_LINK_R_HI,
 
 
 # -------------------- subcommand: chain (Plan G short snapshot) --------------------
-def task_chain():
-    print("[chain] computing g_∥/g_⊥ at last frame for 5 short runs (Plan G, 50k steps)...")
+def task_chain(runs=None):
+    runs = runs if runs is not None else SHORT_RUNS
+    if not runs:
+        print("[chain] no runs supplied; pass runs=[...] or --runs <glob> on CLI")
+        return
+    print(f"[chain] computing g_∥/g_⊥ at last frame for {len(runs)} run(s)...")
     records = []
     positions = {}
-    for label, dirname, MT in SHORT_RUNS:
+    for label, dirname, MT in runs:
         rd = OUT_DIR / dirname
         h5 = next(rd.glob("ER_plasma*.h5"))
         with h5py.File(h5, "r") as f:
@@ -207,18 +245,22 @@ def _fig13_order(records):
 
 
 # -------------------- subcommand: long (Plan G2/G3 long-time + phase diagram) --------------------
-def task_long():
-    print("[long] computing Q(t) for 3 short + 6 long runs...")
-    short_data = [(lbl, MT, *Q_time_series(d, 10)) for lbl, d, MT in
-                  [r for r in SHORT_RUNS if r[2] in (0.0, 0.8, 1.0)]]
+def task_long(short=None, long_=None):
+    short = short if short is not None else SHORT_RUNS
+    long_ = long_ if long_ is not None else LONG_RUNS
+    if not long_:
+        print("[long] no long-time runs supplied; pass long_=[...] or --runs <glob>")
+        return
+    print(f"[long] computing Q(t) for {len(short)} short + {len(long_)} long run(s)...")
+    short_data = [(lbl, MT, *Q_time_series(d, 10)) for lbl, d, MT in short]
     for lbl, MT, ts, Qs, *_ in short_data:
-        print(f"  {lbl} (50k, MT={MT}): Q peak={Qs.max():.2f} @ t={ts[np.argmax(Qs)]:.0f}ms")
-    long_data = [(lbl, MT, *Q_time_series(d, 10)) for lbl, d, MT in LONG_RUNS]
+        print(f"  {lbl} (short, MT={MT}): Q peak={Qs.max():.2f} @ t={ts[np.argmax(Qs)]:.0f}ms")
+    long_data = [(lbl, MT, *Q_time_series(d, 10)) for lbl, d, MT in long_]
     for lbl, MT, ts, Qs, *_ in long_data:
-        print(f"  {lbl} (100k, MT={MT}): Q peak={Qs.max():.2f} @ t={ts[np.argmax(Qs)]:.0f}ms")
+        print(f"  {lbl} (long, MT={MT}): Q peak={Qs.max():.2f} @ t={ts[np.argmax(Qs)]:.0f}ms")
     _fig14_evolution(short_data, long_data)
-    _fig15_g_at_peak(long_data)
-    spacings = _extract_chain_spacing(long_data)
+    _fig15_g_at_peak(long_data, long_)
+    spacings = _extract_chain_spacing(long_data, long_)
     for label, MT, r_pk, gp_pk, _Q, valid in spacings:
         flag = "✓" if valid else "✗ (no chain peak)"
         rd = f"{r_pk:.4f}mm = {r_pk/LAMBDA_MM:.2f}λ" if not np.isnan(r_pk) else "n/a"
@@ -249,12 +291,12 @@ def _fig14_evolution(short_data, long_data):
     print(f"  → {out.name}")
 
 
-def _fig15_g_at_peak(long_data):
+def _fig15_g_at_peak(long_data, long_runs):
     n = len(long_data); cols = 3
     rows = (n + cols - 1) // cols
     fig, axs = plt.subplots(rows, cols, figsize=(5 * cols, 4.2 * rows))
     axs = np.array(axs).reshape(-1)
-    for ax, (label, MT, ts, Qs, gp, gpe), runinfo in zip(axs, long_data, LONG_RUNS):
+    for ax, (label, MT, ts, Qs, gp, gpe), runinfo in zip(axs, long_data, long_runs):
         peak_idx = int(np.argmax(Qs))
         peak_t = ts[peak_idx]
         rd = OUT_DIR / runinfo[1]
@@ -281,9 +323,9 @@ def _fig15_g_at_peak(long_data):
     print(f"  → {out.name}")
 
 
-def _extract_chain_spacing(long_data, gp_threshold=2.0, r_min=0.10, r_max=0.40):
+def _extract_chain_spacing(long_data, long_runs, gp_threshold=2.0, r_min=0.10, r_max=0.40):
     spacings = []
-    for (label, MT, ts, Qs, gp, gpe), runinfo in zip(long_data, LONG_RUNS):
+    for (label, MT, ts, Qs, gp, gpe), runinfo in zip(long_data, long_runs):
         peak_idx = int(np.argmax(Qs)); peak_t = ts[peak_idx]
         rd = OUT_DIR / runinfo[1]
         h5 = next(rd.glob("ER_plasma*.h5"))
@@ -394,10 +436,14 @@ def _write_extended_results_md(short_data, long_data, spacings):
 
 
 # -------------------- subcommand: length (chain-length stats) --------------------
-def task_length():
-    print("[length] computing chains at Q-peak for 6 long runs...")
+def task_length(runs=None):
+    runs = runs if runs is not None else LONG_RUNS
+    if not runs:
+        print("[length] no runs supplied; pass runs=[...] or --runs <glob>")
+        return
+    print(f"[length] computing chains at Q-peak for {len(runs)} run(s)...")
     rows = []
-    for label, dirname, MT in LONG_RUNS:
+    for label, dirname, MT in runs:
         ts, Qs, gp, gpe = Q_time_series(dirname, 10)
         peak_idx = int(np.argmax(Qs)); peak_t = ts[peak_idx]
         h5p = next((OUT_DIR / dirname).glob("ER_plasma*.h5"))
@@ -478,13 +524,25 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                   formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("subcommand", choices=["chain", "long", "length", "all"])
+    ap.add_argument("--runs", nargs="+", default=None,
+                     help="glob(s) under project root that resolve to run "
+                          "directories (each must contain manifest.json). "
+                          "For 'long', use --runs for the long-time set; pair "
+                          "with --short-runs for the short-time set.")
+    ap.add_argument("--short-runs", nargs="+", default=None,
+                     help="(only used by 'long') globs for the short-time set")
     args = ap.parse_args()
+
+    runs = runs_from_dirs(_expand_glob(args.runs)) if args.runs else None
+    short_runs = (runs_from_dirs(_expand_glob(args.short_runs))
+                   if args.short_runs else None)
+
     if args.subcommand in ("chain", "all"):
-        task_chain()
+        task_chain(runs=runs)
     if args.subcommand in ("long", "all"):
-        task_long()
+        task_long(short=short_runs, long_=runs)
     if args.subcommand in ("length", "all"):
-        task_length()
+        task_length(runs=runs)
     print("DONE")
 
 
