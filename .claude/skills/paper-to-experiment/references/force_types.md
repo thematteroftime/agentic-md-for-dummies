@@ -243,6 +243,7 @@ Time-integration scheme is a registered platform extension just like force_type.
 | `integrator` | Scheme | Use when | Caveats |
 |--------------|--------|----------|---------|
 | `baoab_drag` | BAOAB step ordering, drag-only O step (`v *= exp(-ν·dt)`, no Wiener noise) | NVE (ν=0); structural-only NVT where small T drift is OK; legacy PRX/ER/KA-LJ runs | MSD plateaus over long Langevin runs; FD theorem violated; T_meas drifts away from T0 |
+| `baoab_langevin` | BAOAB step ordering with Wiener-noise / FD-balanced O step (`v ← α·v + sqrt((1-α²)·k_B·T_target/m)·R`, `α = exp(-ν·dt)`, `R ~ N(0,I)`) | Diffusion / viscosity / glass dynamics; any observable that demands FD theorem balance; thermostatting at fixed `T_target`. Reduces to Velocity Verlet when `nu=0`. | REQUIRES `T_target` field. Reproducibility needs `ti.init(random_seed=...)` set before construction. Stability heuristic: `dt × ν < 0.1`. |
 
 Schemes register in `integrators/__init__.py:INTEGRATOR_REGISTRY` AND `tools/registry.py:_REGISTRY` (integrators section). For the full extension flow when a paper genuinely requires Wiener-noise Langevin / Bussi / multi-time-step / etc., see "Adding a new integrator" below.
 

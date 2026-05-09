@@ -25,6 +25,7 @@ See SKILL §"Adding a new integrator" for the full 9-step extension flow.
 """
 from integrators.base import IntegratorBase, integratorBase
 from integrators.baoab_drag import BAOABDrag
+from integrators.baoab_langevin import BAOABLangevin
 
 
 # Maps the `integrator` string used in configs/plan_*.json to the class.
@@ -32,7 +33,8 @@ from integrators.baoab_drag import BAOABDrag
 # "baoab_drag")] when they want config-driven dispatch instead of direct
 # class import.
 INTEGRATOR_REGISTRY: dict[str, type] = {
-    "baoab_drag": BAOABDrag,
+    "baoab_drag":     BAOABDrag,
+    "baoab_langevin": BAOABLangevin,
 }
 
 
@@ -46,6 +48,7 @@ __all__ = [
     "IntegratorBase",
     "integratorBase",      # back-compat lowercase alias
     "BAOABDrag",
+    "BAOABLangevin",
     "INTEGRATOR_REGISTRY",
     "DEFAULT_INTEGRATOR",
 ]

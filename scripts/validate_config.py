@@ -95,6 +95,44 @@ def check_unique_tags(cfg, res: Result):
         seen.add(t)
 
 
+def check_integrator_specific(cfg, res: Result):
+    """Per-integrator stability + field-requirement checks. Runs alongside
+    the per-force-type checks; an experiment can have BOTH a force_type
+    rule AND an integrator rule fire."""
+    for exp in cfg.get("campaign", []):
+        scheme = exp.get("integrator", "baoab_drag")
+        tag = exp.get("tag", "<no-tag>")
+
+        if scheme == "baoab_langevin":
+            # T_target presence is enforced by schema; here we sanity-check
+            # the friction-time-scale stability rule:  dt × ν < 0.1.
+            # Default dt depends on force_type; use exp's value if set.
+            dt = exp.get("dt", exp.get("dt_ms", None))
+            nu = exp.get("nu", 0.0)
+            if dt is None:
+                # legacy default per force_type
+                ft = exp.get("force_type")
+                dt = {"hertzian_nonreciprocal": 0.004, "kalj": 0.005,
+                      "er_plasma": 0.01}.get(ft, 0.005)
+            try:
+                stab = float(dt) * float(nu)
+                if stab > 0.1:
+                    res.warn(
+                        f"[{tag}] integrator=baoab_langevin: dt × ν = {stab:.3g} > 0.1 — "
+                        f"discrete-OU step may be ill-conditioned; reduce dt or ν."
+                    )
+            except (TypeError, ValueError):
+                pass
+            T_tgt = exp.get("T_target")
+            T0 = exp.get("T0")
+            if T_tgt is not None and T0 is not None:
+                if abs(float(T_tgt) - float(T0)) > 0.5 * max(float(T_tgt), 1e-9):
+                    res.note(
+                        f"[{tag}] integrator=baoab_langevin: T_target={T_tgt} differs "
+                        f"from T0={T0} by >50% — campaign is intentionally cooling/heating?"
+                    )
+
+
 def check_force_type_specific(cfg, res: Result):
     for exp in cfg.get("campaign", []):
         ft = exp.get("force_type")
@@ -303,6 +341,7 @@ def main():
     schema_validate(cfg, schema, res)
     check_unique_tags(cfg, res)
     check_force_type_specific(cfg, res)
+    check_integrator_specific(cfg, res)
     check_pipeline(cfg, res)
     check_physics_provenance(cfg, res)
     estimate_costs(cfg, res)

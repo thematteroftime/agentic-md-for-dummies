@@ -103,8 +103,8 @@
           "description": "Closed-enum unit regime label. reduced_lj = (σ, ε, m=1, k_B=1) per PRX 2015; macro_dust = (mm, ms, K) per PRL 2008; reduced_yukawa = (a_WS, ω_p, Q=k_B=m=1) for Yukawa OCP. Add new values via the 8-step extension process in force_types.md §4."
         },
         "integrator": {
-          "enum": ["baoab_drag"],
-          "description": "Time-integration scheme. Defaults to baoab_drag (the legacy BAOAB step ordering with deterministic-drag O step — no Wiener noise). Add new values via the 9-step integrator extension flow in force_types.md \"Adding a new integrator\". Schemes that need Wiener noise / Bussi thermostat / multi-time-step register here."
+          "enum": ["baoab_drag", "baoab_langevin"],
+          "description": "Time-integration scheme. Defaults to baoab_drag (the legacy BAOAB step ordering with deterministic-drag O step — no Wiener noise). baoab_langevin adds the Wiener-noise / FD-balanced O step (REQUIRES T_target). Add new values via the 9-step integrator extension flow in force_types.md \"Adding a new integrator\"."
         },
         "T_target": {
           "type": "number",
@@ -161,6 +161,12 @@
               "ndim":         { "const": 3 },
               "units_regime": { "const": "reduced_lj" }
             }
+          }
+        },
+        {
+          "if":   { "properties": { "integrator": { "const": "baoab_langevin" } }, "required": ["integrator"] },
+          "then": {
+            "required": ["T_target"]
           }
         }
       ]

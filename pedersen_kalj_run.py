@@ -30,7 +30,7 @@ os.chdir(SCRIPT_DIR)
 import constSet as cs
 from constSet import *
 from atomSystemClass import AtomSystem
-from integrators import BAOABDrag as integrator
+from integrators import INTEGRATOR_REGISTRY, DEFAULT_INTEGRATOR
 from systemClass import simulator, systemRun
 from searchBox import searchBox
 from forces import KobAndersenLJ
@@ -62,6 +62,11 @@ PARAMS = {
     "nu":               0.1,     # Langevin damping (drag-only — see §11 of design doc)
     "run_steps":        100000,
     "write_stride":     200,
+    # Integrator selection — default preserves legacy behavior (drag-only,
+    # FD theorem violated). Set to "baoab_langevin" to enable Wiener-noise
+    # FD-balanced thermostat — REQUIRES T_target (the FD setpoint).
+    "integrator":       DEFAULT_INTEGRATOR,
+    "T_target":         None,    # only used when integrator=="baoab_langevin"
 
     # Output
     "output_format":    "hdf5",
@@ -164,15 +169,38 @@ def main():
     print(f"[2/4] {run_in_path}: T0={p['T0']}, dt={p['dt']}, "
           f"steps={p['run_steps']}, ν={p['nu']}")
 
+    # Resolve the integrator class by name (config-driven dispatch). Legacy
+    # default = baoab_drag (deterministic damping, no Wiener noise). Use
+    # baoab_langevin for FD-balanced Wiener-noise thermostat.
+    integrator_name = p.get("integrator", DEFAULT_INTEGRATOR)
+    if integrator_name not in INTEGRATOR_REGISTRY:
+        raise SystemExit(
+            f"unknown integrator '{integrator_name}'; "
+            f"known: {sorted(INTEGRATOR_REGISTRY)}")
+    integrator_cls = INTEGRATOR_REGISTRY[integrator_name]
+    print(f"[integrator] {integrator_name} → {integrator_cls.__name__}")
+
     # Build system
     system = systemRun(paramFile=run_in_path, coorFile=lattice_dst)
-    system.register(AtomSystem, integrator, simulator, KobAndersenLJ, searchBox)
+    system.register(AtomSystem, integrator_cls, simulator, KobAndersenLJ, searchBox)
 
     # cutoff = max pair r_c = 2.5 · σ_AA = 2.5; cutoffNegh slightly larger.
     cutoff = p["cutoff_factor"] * p["sigma_AA"]
     cutoffNegh = cutoff * 1.15
 
     cho = p.get("_cho", 1 if p["N"] > 3000 else 2)
+
+    # Build inteParams dict from the integrator's REQUIRED_KWARGS / OPTIONAL_KWARGS.
+    # systemRun.initParams adds `timeStep` and `nu` (from run.in) automatically.
+    inteParams = {"nu": p["nu"]}
+    if "T_target" in integrator_cls.REQUIRED_KWARGS:
+        T_tgt = p.get("T_target")
+        if T_tgt is None:
+            # Default to T0 — the FD setpoint matches the initial-velocity T
+            # unless the campaign explicitly overrides (cooling/heating run).
+            T_tgt = p["T0"]
+        inteParams["T_target"] = float(T_tgt)
+        print(f"[integrator] T_target = {inteParams['T_target']} (FD setpoint)")
 
     system.initParams(
         fFieldParams={
@@ -182,7 +210,7 @@ def main():
         },
         boxParams={"choose": cho, "cutoffNegh": cutoffNegh},
         atomParams={"cutoff": cutoff},
-        inteParams={"nu": p["nu"]},
+        inteParams=inteParams,
         simuParams={
             "write_stride": p["write_stride"],
             "output_format": p["output_format"],
@@ -224,6 +252,9 @@ def main():
         "tag":              tag,
         "run_type":         "kalj",
         "force_class":      "KobAndersenLJ",
+        "integrator":       integrator_name,
+        "integrator_class": integrator_cls.__name__,
+        "T_target":         inteParams.get("T_target"),
         "units":            "reduced",
         "run_dir":          RUN_DIR,
         "h5_path":          out_file,
@@ -283,6 +314,10 @@ if __name__ == "__main__":
                          help="B species fraction (default 0.20 = standard KA)")
     parser.add_argument("--cho", type=int, choices=[1, 2],
                          help="neighbor algo (1=cell-list, 2=O(N²))")
+    parser.add_argument("--integrator", type=str,
+                         help="integrator scheme name (default baoab_drag)")
+    parser.add_argument("--T-target", type=float, dest="T_target",
+                         help="FD setpoint for baoab_langevin (default = T0)")
 
     args = parser.parse_args()
     if args.tag is not None:        PARAMS["_tag"] = args.tag
@@ -294,5 +329,7 @@ if __name__ == "__main__":
     if args.nu is not None:         PARAMS["nu"] = args.nu
     if args.fraction_B is not None: PARAMS["fraction_B"] = args.fraction_B
     if args.cho is not None:        PARAMS["_cho"] = args.cho
+    if args.integrator is not None: PARAMS["integrator"] = args.integrator
+    if args.T_target is not None:   PARAMS["T_target"] = args.T_target
 
     main()

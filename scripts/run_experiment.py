@@ -428,7 +428,9 @@ def _invoke_md(exp):
             "--stride", str(exp["stride"]),
         ]
         for ck, ek in [("nu", "--nu"), ("N", "--N"),
-                        ("fraction_B", "--fraction-B"), ("cho", "--cho")]:
+                        ("fraction_B", "--fraction-B"), ("cho", "--cho"),
+                        ("integrator", "--integrator"),
+                        ("T_target", "--T-target")]:
             if ck in exp and exp[ck] is not None:
                 cmd.extend([ek, str(exp[ck])])
     else:

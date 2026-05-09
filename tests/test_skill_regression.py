@@ -177,6 +177,8 @@ def test_registry_local_init_sync():
     must mirror that section. Sections without a local __init__.py (forces,
     lattices) skip this check — they have their own FORCE_REGISTRY /
     LATTICE_REGISTRY dicts which are kept in sync via test_lattices.py.
+    Integrators have integrators/__init__.py:INTEGRATOR_REGISTRY (covered
+    below).
     """
     from tools.registry import _REGISTRY
 
@@ -187,6 +189,7 @@ def test_registry_local_init_sync():
         "tools.analyzers":   "tools/analyzers/__init__.py",
         "tools.plotters":    "tools/plotters/__init__.py",
         "tools.aggregators": "tools/aggregators/__init__.py",
+        "integrators":       "integrators/__init__.py",
     }
     for name, target in _REGISTRY.items():
         if ":" not in target:
@@ -194,7 +197,7 @@ def test_registry_local_init_sync():
         module_path, classname = target.rsplit(":", 1)
         # Find which init we should check
         for prefix, init_rel in SECTION_TO_INIT.items():
-            if module_path.startswith(prefix + "."):
+            if module_path.startswith(prefix + ".") or module_path == prefix:
                 init_path = ROOT / init_rel
                 init_text = init_path.read_text(encoding="utf-8")
                 assert classname in init_text, (
@@ -203,6 +206,26 @@ def test_registry_local_init_sync():
                     f"import {classname}` and include it in __all__."
                 )
                 break
+
+
+def test_integrator_schema_enum_synced_with_registry():
+    """Schema's `integrator` enum must list exactly the integrators registered
+    in `integrators/__init__.py:INTEGRATOR_REGISTRY`. Catches the silent
+    "I added the integrator class but forgot to extend the schema enum"
+    mode that breaks campaign configs which try to use the new scheme."""
+    from integrators import INTEGRATOR_REGISTRY
+    schema = json.loads(SCHEMA_PATH.read_text(encoding="utf-8"))
+    enum = schema["definitions"]["experiment"]["properties"]["integrator"]["enum"]
+    for scheme in INTEGRATOR_REGISTRY:
+        assert scheme in enum, (
+            f"integrator '{scheme}' is in INTEGRATOR_REGISTRY but missing "
+            f"from schema's `integrator` enum {enum}. Add it via the 9-step "
+            f"integrator extension flow in references/force_types.md §5b.")
+    for scheme in enum:
+        assert scheme in INTEGRATOR_REGISTRY, (
+            f"integrator '{scheme}' is in schema enum but not in "
+            f"INTEGRATOR_REGISTRY {sorted(INTEGRATOR_REGISTRY)}. Schema "
+            f"and integrators/__init__.py drifted apart.")
 
 
 def test_registry_force_type_has_adapter():

@@ -39,6 +39,7 @@ _REGISTRY: dict[str, str] = {
     "KobAndersenLJ":          "forces.kalj:KobAndersenLJ",
     # integrators (time-integration schemes; `integrator` config string)
     "BAOABDrag":              "integrators.baoab_drag:BAOABDrag",
+    "BAOABLangevin":          "integrators.baoab_langevin:BAOABLangevin",
     # lattices (initial-condition generators)
     "square_2d":              "tools.lattices.square_2d:SquareLattice2D",
     "triangular_2d":          "tools.lattices.triangular_2d:TriangularLattice2D",
