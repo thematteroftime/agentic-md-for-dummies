@@ -42,11 +42,11 @@ It ships with two **end-to-end reproductions** of recent complex-plasma papers a
 | | |
 |---|---|
 | 🧱 **4-layer architecture** | Config → Adapter → Platform → Infrastructure. Each layer talks only to the one below it. |
-| 🤖 **AI skill** | A Claude Code skill (`paper-to-experiment`) that walks a paper into a validated config in 7 steps. |
+| 🤖 **AI skill** | A Claude Code skill (`paper-to-experiment`) that walks a paper into a validated config in 7 steps, with an 8-step extension flow when a new force / analyzer / plotter / aggregator is required. |
 | 📋 **Schema-validated configs** | JSON Schema + physics rules + budget guards. Bad configs fail before any GPU is touched. |
 | 🔌 **Class-name dispatch** | Add a new analyzer / visualizer / aggregator? One file + one registry line. No central if-else. |
 | 🧪 **Layered testing** | Schema gate, manifest gate, registry gate, runtime gate. Every contract has an enforcement point. |
-| 📐 **Two reference papers** | PRX 2015 (slope_A=2/3 to within 1%) and PRL 2008 (chain phase, ⟨L⟩=5.15 at MT=0.8). |
+| 📐 **Three reference papers** | PRX 2015 (slope_A=2/3 to within 1%), PRL 2008 (chain phase, ⟨L⟩=5.15 at MT=0.8), and PRL 2018 KA binary LJ (g_AB peak < g_AA peak across 3 temperatures). |
 
 ---
 
@@ -322,18 +322,19 @@ md-for-dummies/
 │
 ├── .claude/skills/
 │   ├── paper-to-experiment/        the AI skill that drives the workflow
-│   │   ├── SKILL.md                7-step process + hard rules
+│   │   ├── SKILL.md                7-step config flow + 8-step extension + hard rules
 │   │   ├── templates/              physics_design.md, plan_config.schema.json
 │   │   └── references/             force_types registry + worked examples
 │   └── creator/                    meta-skill (generate a paper-to-experiment
 │                                    skill for a different framework — WIP)
 │
-├── configs/examples/               worked example configs from the 2 papers
+├── configs/examples/               worked example configs from the 3 papers
 │
 ├── tools/                          platform package (registry-dispatched)
-│   ├── analyzers/{prx,er}.py
-│   ├── plotters/prx.py
-│   ├── aggregators/{prx,er}.py
+│   ├── analyzers/{prx,er,pedersen}.py
+│   ├── plotters/{prx,pedersen}.py
+│   ├── aggregators/{prx,er,pedersen}.py
+│   ├── lattices/{square_2d,triangular_2d,octagonal_2d,simple_cubic_3d}.py
 │   ├── visualizers/taichi_traj.py
 │   ├── registry.py                 name → class lookup
 │   ├── runner.py / resources.py / file_io.py
@@ -378,7 +379,7 @@ Less welcome:
 When opening a PR for a new paper:
 
 1. Add a config under `configs/examples/`
-2. If the paper needs a new force, follow `force_types.md` §3 (the 6-step process)
+2. If the paper needs a new force, follow `force_types.md` §4 (the 8-step extension process)
 3. Add tests under `tests/`
 4. Add 1-2 reproduction figures to `docs/images/` and reference them in your example config's `_design_doc`
 
@@ -388,6 +389,7 @@ When opening a PR for a new paper:
 
 - Ivlev, A. V. *et al.* "Statistical mechanics where Newton's third law is broken." *Phys. Rev. X* **5**, 011035 (2015). [DOI:10.1103/PhysRevX.5.011035](https://doi.org/10.1103/PhysRevX.5.011035)
 - Ivlev, A. V. *et al.* "First Observation of Electrorheological Plasmas." *Phys. Rev. Lett.* **100**, 095003 (2008). [DOI:10.1103/PhysRevLett.100.095003](https://doi.org/10.1103/PhysRevLett.100.095003)
+- Pedersen, U. R., Schrøder, T. B., Dyre, J. C. "Phase Diagram of Kob-Andersen-Type Binary Lennard-Jones Mixtures." *Phys. Rev. Lett.* **120**, 165501 (2018). [DOI:10.1103/PhysRevLett.120.165501](https://doi.org/10.1103/PhysRevLett.120.165501)
 - Hu, Y. *et al.* "Taichi: a Language for High-Performance Computation on Spatially Sparse Data Structures." *ACM Trans. Graph.* **38**, 6 (2019). The Taichi compiler powering Layer 1.
 
 ---
