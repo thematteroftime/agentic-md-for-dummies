@@ -1,0 +1,217 @@
+#!/usr/bin/env python3
+"""validate_config.py — schema + physics validation for {{CONFIG_PATH_PATTERN}}.
+
+Used as the gate between "AI emitted config" and "compute resources spent".
+
+Usage:
+    python {{VALIDATOR_PATH}} {{CONFIG_PATH_EXAMPLE}}
+    python {{VALIDATOR_PATH}} {{CONFIG_PATH_EXAMPLE}} --strict
+    python {{VALIDATOR_PATH}} {{CONFIG_PATH_EXAMPLE}} --preflight
+
+Exit codes:
+    0 = all checks pass
+    1 = schema or physics validation failed
+    2 = warnings only (non-strict mode passes; strict fails)
+"""
+from __future__ import annotations
+import argparse
+import json
+import sys
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parent.parent
+SCHEMA = ROOT / ".claude" / "skills" / "paper-to-experiment-{{FRAMEWORK_NAME}}" / "templates" / "plan_config.schema.json"
+
+GREEN = "\033[32m"; RED = "\033[31m"; YELLOW = "\033[33m"; CYAN = "\033[36m"; END = "\033[0m"
+
+# {{HARD_BUDGETS}} — fill from framework_profile §D.2
+HARD_BUDGET_WALL_HR  = {{WALL_BUDGET_HR}}
+HARD_BUDGET_RAM_GB   = {{RAM_BUDGET_GB}}
+HARD_BUDGET_DISK_GB  = {{DISK_BUDGET_GB}}
+HARD_BUDGET_ACCEL_GB = {{ACCEL_BUDGET_GB}}  # GPU VRAM / TPU memory / etc.
+
+# Heuristic crossover thresholds — substitute with your numbers
+DEFAULT_<THRESHOLD_NAME> = {{DEFAULT_THRESHOLD_VALUE}}
+
+
+class Result:
+    def __init__(self):
+        self.errors = []
+        self.warnings = []
+        self.notes = []
+    def err(self, msg):  self.errors.append(msg)
+    def warn(self, msg): self.warnings.append(msg)
+    def note(self, msg): self.notes.append(msg)
+    @property
+    def passed(self):
+        return not self.errors
+    def report(self):
+        for n in self.notes:    print(f"  {CYAN}note{END}: {n}")
+        for w in self.warnings: print(f"  {YELLOW}warn{END}: {w}")
+        for e in self.errors:   print(f"  {RED}ERR {END}: {e}")
+        if self.passed and not self.warnings:
+            print(f"  {GREEN}all checks passed.{END}")
+
+
+def load_schema():
+    if not SCHEMA.exists():
+        sys.exit(f"schema not found at {SCHEMA}")
+    return json.loads(SCHEMA.read_text(encoding="utf-8"))
+
+
+def schema_validate(cfg, schema, res: Result):
+    """jsonschema validation; falls back to manual check if jsonschema not installed."""
+    try:
+        import jsonschema
+        try:
+            jsonschema.validate(cfg, schema)
+        except jsonschema.ValidationError as e:
+            res.err(f"schema: {e.message} (path: {'/'.join(str(p) for p in e.absolute_path)})")
+        return
+    except ImportError:
+        res.note("jsonschema not installed — running minimal manual checks")
+    if "campaign" not in cfg:
+        res.err("missing top-level 'campaign'")
+    if "pipeline" not in cfg:
+        res.err("missing top-level 'pipeline'")
+    if not isinstance(cfg.get("campaign"), list) or not cfg["campaign"]:
+        res.err("'campaign' must be non-empty list")
+
+
+def check_unique_tags(cfg, res: Result):
+    tags = [exp.get("tag") for exp in cfg.get("campaign", [])]
+    seen = set()
+    for t in tags:
+        if t in seen:
+            res.err(f"duplicate tag '{t}'")
+        seen.add(t)
+
+
+def check_type_specific(cfg, res: Result):
+    """Per-{{TYPE_CONCEPT}} physics rules. ADD ONE BLOCK PER REGISTERED TYPE.
+
+    Example pattern: when this type is selected, certain combinations of
+    fields are forbidden / warn-worthy. See {{REGISTRY_PATH}} §<type> rules.
+    """
+    for exp in cfg.get("campaign", []):
+        ttype = exp.get("{{TYPE_CONCEPT}}")
+        tag = exp.get("tag", "<no-tag>")
+        if ttype == "<type_1>":
+            # <param>_X must satisfy <constraint> per <citation>
+            x = exp.get("<param_X>", 0)
+            if x > {{TYPE1_LIMIT}}:
+                res.warn(f"[{tag}] <param_X>={x} exceeds {{TYPE1_LIMIT}} — see {{REGISTRY_PATH}} §1")
+        elif ttype == "<type_2>":
+            # <param>_Y combined with <param>_Z requires <condition>
+            pass
+        else:
+            res.err(f"[{tag}] unknown {{TYPE_CONCEPT}} '{ttype}' — see {{REGISTRY_PATH}}")
+
+
+def check_pipeline(cfg, res: Result):
+    pipe = cfg.get("pipeline", {})
+    if pipe.get("smoke", True):
+        ss = pipe.get("smoke_steps", 100)
+        if ss == 0:
+            res.warn("pipeline.smoke=true but smoke_steps=0 — smoke is a no-op. Set smoke_steps≥100.")
+        elif ss < 100:
+            res.warn(f"pipeline.smoke=true with smoke_steps={ss} < 100 — SKILL hard rule requires ≥100.")
+    if not pipe.get("halt_on_fail", False):
+        res.warn("pipeline.halt_on_fail=false — campaign continues past failures (you may waste compute)")
+    n_runs = len(cfg.get("campaign", []))
+    max_par = pipe.get("max_parallel", 1)
+    if max_par > 4:
+        res.err(f"pipeline.max_parallel={max_par} > 4 ({{HARDWARE_TARGET}} typical headroom)")
+    if max_par > n_runs:
+        res.warn(f"max_parallel={max_par} > n_runs={n_runs} — parallel scheduler will idle")
+
+
+def check_physics_provenance(cfg, res: Result):
+    if not cfg.get("_paper_ref"):
+        res.warn("missing '_paper_ref' — strongly recommended (links campaign to source paper)")
+    if not cfg.get("_design_doc"):
+        res.note("missing '_design_doc' — recommended for skill-emitted configs")
+    if not cfg.get("_comment"):
+        res.warn("missing '_comment' — one-paragraph rationale prevents future you from forgetting why")
+
+
+def _step_rate(N: int, mode: str) -> float:
+    """Step / iteration rate model calibrated from project profile §B.4 + manifest data.
+    Recalibrate if real wall ≠ estimate by >2x.
+    """
+    # TODO: substitute with real numbers from your project's manifest.json files
+    if mode == "<fast_mode>":
+        if N <= 1000:  return {{FAST_RATE_SMALL}}
+        if N <= 10000: return {{FAST_RATE_MID}}
+        return {{FAST_RATE_LARGE}}
+    else:  # <slow_mode>
+        if N <= 1000: return {{SLOW_RATE_SMALL}}
+        return {{SLOW_RATE_LARGE}}
+
+
+def estimate_costs(cfg, res: Result):
+    n_runs = len(cfg.get("campaign", []))
+    if not n_runs:
+        return
+    per_run_walls = []
+    max_N = 0
+    for exp in cfg.get("campaign", []):
+        N = exp.get("N", {{DEFAULT_N}})
+        max_N = max(max_N, N)
+        # mode = exp.get("<mode_field>", "<default_mode>")
+        rate = _step_rate(N, "<default_mode>")
+        steps = exp.get("steps", 0)
+        per_run_walls.append(steps / rate / 3600)
+
+    avg_wall_hr = sum(per_run_walls) / n_runs
+    max_par = cfg.get("pipeline", {}).get("max_parallel", 1)
+    total_wall_hr = sum(per_run_walls) / max_par
+    accel_gb = max_N * {{ACCEL_PER_N_BYTES}} / 1e9 + {{ACCEL_OVERHEAD_GB}}
+    res.note(f"cost estimate: {n_runs} runs, ~{avg_wall_hr:.2f} hr/run avg, "
+             f"total ~{total_wall_hr:.1f} hr (parallel x{max_par}), "
+             f"accel mem ~{accel_gb:.2f} GB.")
+    if max(per_run_walls) > HARD_BUDGET_WALL_HR:
+        res.err(f"longest-run wall {max(per_run_walls):.1f} hr > {HARD_BUDGET_WALL_HR} hr budget")
+    if accel_gb > HARD_BUDGET_ACCEL_GB:
+        res.err(f"accel mem {accel_gb:.2f} GB > {HARD_BUDGET_ACCEL_GB} GB — reduce N or use coarser scheme")
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("config")
+    ap.add_argument("--strict", action="store_true")
+    ap.add_argument("--preflight", action="store_true")
+    args = ap.parse_args()
+
+    cfg_path = Path(args.config)
+    if not cfg_path.exists():
+        sys.exit(f"config not found: {cfg_path}")
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    schema = load_schema()
+    res = Result()
+
+    print(f"{CYAN}validating{END} {cfg_path}")
+    schema_validate(cfg, schema, res)
+    check_unique_tags(cfg, res)
+    check_type_specific(cfg, res)
+    check_pipeline(cfg, res)
+    check_physics_provenance(cfg, res)
+    estimate_costs(cfg, res)
+    res.report()
+
+    if args.preflight and res.passed:
+        import subprocess
+        rc = subprocess.call([sys.executable, "{{ENTRY_SCRIPT}}",
+                              str(cfg_path), "--preflight-only"])
+        if rc != 0:
+            res.err(f"preflight subprocess returned {rc}")
+
+    if not res.passed:
+        sys.exit(1)
+    if args.strict and res.warnings:
+        sys.exit(2)
+    sys.exit(0)
+
+
+if __name__ == "__main__":
+    main()

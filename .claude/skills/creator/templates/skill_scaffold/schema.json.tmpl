@@ -1,0 +1,105 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "{{FRAMEWORK_NAME}} experiment campaign config",
+  "description": "Schema for {{CONFIG_PATH_PATTERN}} consumed by {{ENTRY_SCRIPT}}.",
+  "type": "object",
+  "required": ["campaign", "pipeline"],
+  "additionalProperties": false,
+  "properties": {
+    "_comment":     { "type": "string" },
+    "_paper_ref":   { "type": "string", "description": "Paper citation" },
+    "_design_doc":  { "type": "string", "description": "Path to docs/specs/<topic>-design.md" },
+    "_<custom_threshold>": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 100000,
+      "description": "(optional) framework-specific tunable, e.g. cell-list crossover N. Document in registry."
+    },
+    "campaign": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "$ref": "#/definitions/experiment" }
+    },
+    "pipeline": {
+      "type": "object",
+      "required": ["preflight", "production", "halt_on_fail"],
+      "additionalProperties": false,
+      "properties": {
+        "preflight":        { "type": "boolean" },
+        "smoke":            { "type": "boolean" },
+        "smoke_steps":      { "type": "integer", "minimum": 0, "maximum": 5000 },
+        "production":       { "type": "boolean" },
+        "analyze":          { "type": "boolean" },
+        "analyzer_class":   { "type": "string", "description": "Class registered in {{REGISTRY_PATH}}. Defaults to {{DEFAULT_ANALYZER}} for back-compat." },
+        "analyzer_params":  { "type": "object", "description": "kwargs passed to AnalyzerCls.full_analysis()" },
+        "visualize": {
+          "type": "object",
+          "description": "Optional per-run visualization. Class resolved via {{REGISTRY_PATH}}.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "class":   { "type": "string" },
+            "params":  { "type": "object" }
+          },
+          "if":   { "properties": { "enabled": { "const": true } } },
+          "then": { "required": ["class"] }
+        },
+        "halt_on_fail":     { "type": "boolean" },
+        "max_parallel":     { "type": "integer", "minimum": 1, "maximum": 4 }
+      }
+    },
+    "aggregation": {
+      "type": "object",
+      "description": "Cross-run aggregation. `class` resolved via {{REGISTRY_PATH}}.",
+      "properties": {
+        "enabled":   { "type": "boolean" },
+        "class":     { "type": "string", "description": "Aggregator class name registered in {{REGISTRY_PATH}}. Default: {{DEFAULT_AGGREGATOR}}." },
+        "params":    { "type": "object" },
+        "output":    { "type": "string" },
+        "outputs":   { "type": "array", "items": { "type": "string" } },
+        "plots":     { "type": "array", "items": { "type": "string" } },
+        "runs":      { "type": "string" },
+        "title":     { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "experiment": {
+      "type": "object",
+      "required": ["{{TYPE_CONCEPT}}", "tag", "steps", "stride"],
+      "properties": {
+        "{{TYPE_CONCEPT}}": {
+          "enum": {{REGISTERED_TYPES_JSON_ARRAY}},
+          "description": "Must match a registered type in {{REGISTRY_PATH}}"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+$",
+          "minLength": 2,
+          "maxLength": 32,
+          "description": "Unique run identifier; no spaces/dashes"
+        },
+        "steps":  { "type": "integer", "minimum": 100, "maximum": {{MAX_STEPS}} },
+        "stride": { "type": "integer", "minimum": 1,   "maximum": {{MAX_STRIDE}} },
+        "notes":  { "type": "string" },
+
+        "// PER_TYPE_FIELDS_PLACEHOLDER":
+          "Insert per-type field definitions here, one entry per registered type. Each field has type, range, description. Example shapes for one of the types (replace with your real fields):",
+
+        "<param_1>": { "type": "number", "minimum": 0, "maximum": 1.0, "description": "<paper meaning>" },
+        "<param_2>": { "type": "number", "minimum": 0.001, "maximum": 100, "description": "<paper meaning>" },
+        "N":         { "type": "integer", "minimum": 100, "maximum": 100000, "description": "size param; semantics depend on type — see registry" },
+
+        "// END_PER_TYPE_FIELDS_PLACEHOLDER": ""
+      },
+      "// CONDITIONAL_REQUIRED_PLACEHOLDER":
+        "Insert one if/then per registered type listing its required fields. Example for ONE type — duplicate for each entry in REGISTERED_TYPES:",
+      "allOf": [
+        {
+          "if":   { "properties": { "{{TYPE_CONCEPT}}": { "const": "<type_1>" } } },
+          "then": { "required": ["<param_1>", "<param_2>"] }
+        }
+      ]
+    }
+  }
+}

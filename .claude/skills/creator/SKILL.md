@@ -44,18 +44,60 @@ Save user answers + inspections to `docs/specs/<TS>-<framework-name>-profile.md`
 
 ### Step 4 — Generate skill
 
-For each placeholder in `templates/skill_scaffold/`, substitute from profile:
+For each `{{X}}` placeholder in `templates/skill_scaffold/`, substitute from the framework profile filled in Step 3.
 
-| Scaffold token | Source |
+**Identity / structure** (from §A):
+
+| Token | Profile field |
 |---|---|
-| `{{FRAMEWORK_NAME}}` | profile §A.1 |
-| `{{CONFIG_FORMAT}}` | profile §A.2 |
-| `{{ENTRY_SCRIPT}}` | profile §A.3 |
-| `{{REGISTRY_PATH}}` | profile §C.1 |
-| `{{REGISTERED_TYPES}}` | profile §A.5 |
-| `{{ADAPTER_CONTRACT_FIELDS}}` | profile §C.2 |
+| `{{FRAMEWORK_NAME}}` | A.1 framework_name |
+| `{{LANGUAGE_STACK}}` / `{{LANGUAGE_HINT}}` | A.2 language_stack |
+| `{{CONFIG_FORMAT}}` | A.3 config_format |
+| `{{ENTRY_SCRIPT}}` | A.4 entry_script |
+| `{{CONFIG_PATH_PATTERN}}` | derived from A.3 + project layout |
+| `{{CONFIG_PATH_EXAMPLE}}` | derived: e.g. `configs/examples/<sample>.json` |
+| `{{OUTPUT_DIR_CONVENTION}}` | A.5 |
+| `{{TYPE_CONCEPT}}` | A.6 (e.g. `force_type`, `model_type`) |
+| `{{REGISTERED_TYPES}}` (CSV) / `{{REGISTERED_TYPES_JSON_ARRAY}}` | A.7 |
+| `{{PRIMARY_FIELD}}` | F.1 (one-word domain label) |
+
+**Schema / validation** (from §C):
+
+| Token | Profile field |
+|---|---|
+| `{{REGISTRY_PATH}}` | C.1 registry_path |
+| `{{VALIDATOR_PATH}}` | C.4 (or new: `scripts/validate_config.py`) |
+| `{{TYPE_REGISTRY_FILE}}` | derived: `references/<type_concept>s.md` |
+| `{{MAX_STEPS}}`, `{{MAX_STRIDE}}` | derived from B.4 + project max-N |
+| `{{DEFAULT_N}}` | from typical config in E.1 |
+| `{{DEFAULT_THRESHOLD_VALUE}}` / `{{DEFAULT_<THRESHOLD_NAME>}}` | C.2 cross-field rules |
+| `{{TYPE1_LIMIT}}` (and similar per-type limits) | C.2 per-type ranges |
+
+**Resource budgets** (from §D):
+
+| Token | Profile field |
+|---|---|
+| `{{HARDWARE_TARGET}}` | D.1 |
+| `{{HARD_BUDGETS}}` (summary string) | D.2 |
+| `{{WALL_BUDGET_HR}}` | D.2 wall |
+| `{{RAM_BUDGET_GB}}` | D.2 RAM |
+| `{{DISK_BUDGET_GB}}` | D.2 disk |
+| `{{ACCEL_BUDGET_GB}}` | D.2 accel |
+| `{{ACCEL_PER_N_BYTES}}`, `{{ACCEL_OVERHEAD_GB}}` | D.2 + B.4 calibration |
+| `{{FAST_RATE_SMALL}}`, `{{FAST_RATE_MID}}`, `{{FAST_RATE_LARGE}}` | B.4 step rate (fast mode, by N tier) |
+| `{{SLOW_RATE_SMALL}}`, `{{SLOW_RATE_LARGE}}` | B.4 step rate (slow mode, by N tier) |
+
+**Defaults** (from §A.7 + C):
+
+| Token | Profile field |
+|---|---|
+| `{{DEFAULT_ANALYZER}}` | one of A.7 with "Analyzer" suffix |
+| `{{DEFAULT_AGGREGATOR}}` | one of A.7 with "Aggregator" suffix |
+| `{{ANALYZER_NAMING}}` | F.3 |
 
 Write the generated files to `<user_project>/.claude/skills/paper-to-experiment-<framework>/`. Never overwrite an existing skill of the same name without explicit confirmation.
+
+**Self-check before handoff**: grep the generated files for any remaining `{{...}}` tokens. If any survive, you missed a substitution — go back to Step 3 and add the missing profile field.
 
 ### Step 5 — Self-test
 
@@ -84,7 +126,7 @@ Tell the user: where the skill is, what registry entries to add, the smoke-test 
 │   ├── framework_profile.md   # filled by creator + user
 │   └── skill_scaffold/        # placeholder skill, copied + substituted
 │       ├── SKILL.md.tmpl
-│       ├── design_template.md.tmpl
+│       ├── design.md.tmpl
 │       ├── schema.json.tmpl
 │       ├── registry.md.tmpl
 │       └── validator.py.tmpl

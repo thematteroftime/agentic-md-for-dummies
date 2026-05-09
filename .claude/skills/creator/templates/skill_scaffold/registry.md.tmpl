@@ -1,0 +1,106 @@
+# {{TYPE_CONCEPT}} registry — {{FRAMEWORK_NAME}}
+
+Authoritative source for which `{{TYPE_CONCEPT}}` strings are valid in {{CONFIG_PATH_PATTERN}} and what fields each requires. Skill must consult this BEFORE proposing any config field.
+
+When adding a new {{TYPE_CONCEPT}}, follow §3 below — registry is the gatekeeper, schema and skill follow.
+
+---
+
+## 1. `<type_1>`  ({{PRIMARY_FIELD}}, e.g. paper reference)
+
+- **paper / source**: `<citation>`
+- **entry script**: `{{ENTRY_SCRIPT}}`  *(or specific path)*
+- **{{TYPE_CONCEPT}} class**: `<module>.<ClassName>`
+- **analyzer**: `<class or script path>`
+- **units**: `<reduced / SI / project-specific>`
+- **integrator / solver**: `<from existing or new>`
+
+### Required fields per experiment
+
+| field | type | range | meaning |
+|-------|------|-------|---------|
+| `tag` | str | `[A-Za-z0-9_]{2,32}` | unique run id |
+| `<param_1>` | `<type>` | `<range>` | `<meaning>` |
+| `<param_2>` | `<type>` | `<range>` | `<meaning>` |
+| `steps` | int | `[100, {{MAX_STEPS}}]` | total iterations |
+| `stride` | int | `[1, {{MAX_STRIDE}}]` | output frequency |
+
+### Optional fields
+
+| field | type | default | meaning |
+|-------|------|---------|---------|
+| `<opt_1>` | `<type>` | `<default>` | `<meaning>` |
+| `<opt_2>` | `<type>` | `<default>` | `<meaning>` |
+
+### Critical pre-flight rules
+
+- **`<rule>`**: `<explanation, e.g. "param X cannot exceed value Y due to numerical stability">`.
+- **Hard budget**: see {{HARD_BUDGETS}}.
+
+### Example
+
+```json
+{
+  "{{TYPE_CONCEPT}}": "<type_1>",
+  "tag": "<tag>",
+  "<param_1>": <value>,
+  "<param_2>": <value>,
+  "steps": <n>,
+  "stride": <m>
+}
+```
+
+---
+
+## 2. `<type_2>`  *(repeat structure if applicable)*
+
+Mirror §1 with the next registered type. If only one type exists at framework birth, leave §2 as a "future expansion" placeholder.
+
+---
+
+## 3. Adding a new {{TYPE_CONCEPT}}
+
+When a new requirement needs a {{TYPE_CONCEPT}} not listed above, the skill MUST guide the user through these steps in order. **Do not skip any step.**
+
+1. **Class implementation**
+   - Add `<NewClass>` in `<implementations dir>` following the existing class pattern.
+   - Pattern: copy nearest existing class as starting point.
+
+2. **Tests** (mandatory before any production run)
+   - `tests/test_<class>_<N>cases.<ext>` covering: analytic verification; symmetry; boundary.
+   - Run test suite until green.
+
+3. **Entry script**
+   - Mirror `{{ENTRY_SCRIPT}}` structure for the new type.
+   - CLI flags must include all required fields from §1 above.
+
+4. **Dispatch wiring**
+   - Edit the platform's dispatcher (`<dispatcher path>`) — add a branch for the new `{{TYPE_CONCEPT}}`.
+   - Update `EXP_REQUIRED_<TYPE>` constant with required fields.
+
+5. **Schema update**
+   - Edit `templates/plan_config.schema.json`:
+     - Add new value to `{{TYPE_CONCEPT}}` enum.
+     - Add new `if/then` block in `allOf` mapping the new type → required-fields list.
+
+6. **Registry update**
+   - Add a new section here (`## N. <new_type>`) with paper ref, fields, examples, pre-flight rules.
+
+After all steps, the new {{TYPE_CONCEPT}} is usable in {{CONFIG_PATH_PATTERN}} and the skill will recognize it.
+
+---
+
+## 4. Legacy configs (pre-`{{TYPE_CONCEPT}}` field)
+
+Configs written before the `{{TYPE_CONCEPT}}` field was introduced will fail strict validation. Migration: add `"{{TYPE_CONCEPT}}": "<their original type>"` to each campaign entry. No other changes needed; semantics unchanged.
+
+Skill MUST NOT auto-rewrite legacy configs. Flag the migration explicitly and let user merge.
+
+---
+
+## 5. Cross-reference
+
+- **Schema**: `templates/plan_config.schema.json`
+- **Skill main**: `SKILL.md`
+- **Run dispatcher**: `<dispatcher path>`
+- **Validator**: `<validator path>`

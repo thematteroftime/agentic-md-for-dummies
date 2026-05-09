@@ -1,0 +1,201 @@
+# Paper-to-Experiment Design — `<TOPIC_SLUG>`
+
+> Template version: 1.0  ·  Save as: `docs/specs/YYYY-MM-DD-<topic>-design.md`
+>
+> All fields are required unless marked `(optional)`. Replace every `<...>` placeholder.
+> If a section truly does not apply, write `N/A — <reason>`; do not delete the heading.
+
+---
+
+## §0 Metadata
+
+- **paper_title**: `<full title>`
+- **citation**: `Author et al., Journal Vol, page (Year)`
+- **doi**: `10.XXXX/...`
+- **paper_pdf**: `<path under your project>`
+- **key_equations**: `Eq.(1), Eq.(N), ...`
+- **key_figures**: `Fig.1, Fig.N, ...`
+- **legacy_data**: `<file path or "none">` *(prior outputs to cross-validate)*
+
+---
+
+## §1 Physics observables
+
+Every observable MUST cite a paper Eq. or Fig. number. AI MUST NOT invent observables not in the paper. Quantify qualitative claims (e.g. "particles cluster" → "g(r) peak height > 4").
+
+| ID | Observable | Paper ref | Type | Quantitative target | Tolerance | Analyzer |
+|----|------------|-----------|------|---------------------|-----------|----------|
+| O1 | `<name>` | `Eq.(N)` | scalar / curve / map | `<value or shape>` | `±X%` | `<{{ANALYZER_NAMING}} method>` |
+
+If an observable is **derived** (not directly in paper), mark with `*` and explain in §11.
+
+---
+
+## §2 {{TYPE_CONCEPT}}
+
+- **name**: `<existing class from {{REGISTRY_PATH}} | NEW>`
+- **registered_value**: `<one of {{REGISTERED_TYPES}} | NEW>`
+- **units**: `<your project's unit conventions>`
+- **new_class_required**: `true | false`
+- **paper_eq_for_kernel**: `Eq.(N)`
+
+### §2a New class  *(fill only if new_class_required=true; else delete this subsection)*
+
+- **rationale**: `<why existing classes don't fit>`
+- **interface skeleton** (10–30 lines, key method only):
+  ```{{LANGUAGE_HINT}}
+  # Implement the kernel from paper Eq.(N) following the project's
+  # contract for new {{TYPE_CONCEPT}}s. See {{REGISTRY_PATH}} §3 for
+  # the N-step extension process.
+  ```
+- **test_plan**: `tests/test_<class>_<N>cases.<ext>` covering:
+  - Analytic verification on a known case
+  - Symmetry / conservation laws if any
+  - Boundary cases
+- **analytical_fingerprints**: `<numbers from paper appendix that can be computed pre-simulation>`
+
+---
+
+## §3 Run setup (single-run defaults)
+
+- **N (size)**: `<int or "sweep">`
+- **dt / step size**: `<value>`
+- **<initial_state_param>**: `<value or "sweep">`
+- **<density_or_geometry_param>**: `<value or "sweep">`
+- **boundary / domain**: `<periodic / wall / open / etc.>`
+- **integrator / solver / training-loop**: `<from {{REGISTRY_PATH}} or new>`
+- **steps / iterations**: `<int>`
+- **t_total / wall_target**: `<value> <unit>`
+- **other framework-specific knobs**: see {{REGISTRY_PATH}} for `<{{TYPE_CONCEPT}}>` required fields.
+
+---
+
+## §4 Sweep dimensions
+
+### §4a Fixed parameters (held constant across all runs)
+
+| Parameter | Value | Source (paper § or registry default) |
+|-----------|-------|---------------------------------------|
+| `<name>` | `<value>` | `<paper §X / registry default>` |
+
+### §4b Swept dimensions (cross-product = total runs)
+
+| Dim | Variable | Values | Count | Rationale (paper §) |
+|-----|----------|--------|-------|---------------------|
+| D1 | `<name>` | `[v1, v2, ...]` | N | paper §X requires sweep |
+
+**Total runs**: `<product of counts>`
+
+If runs > 12, justify or split. Skill warns above 16.
+
+---
+
+## §5 Run phases
+
+| Phase | Enabled | Steps/iter | Purpose |
+|-------|---------|-----------|---------|
+| preflight  | `yes` | — | resource estimate ({{HARDWARE_TARGET}}) |
+| smoke      | `yes` | `100` | crash check before production |
+| production | `yes` | `<from §3>` | main run |
+| analyze    | `yes / no` | — | per-run + aggregate |
+
+`halt_on_fail: true`
+`max_parallel: <2 default; raise only if hardware headroom>`
+
+---
+
+## §6 Pass criteria
+
+For each observable from §1:
+
+| Observable ID | Analyzer output | PASS | NEAR | FAIL |
+|---------------|-----------------|------|------|------|
+| O1 | `<metric>` | `<rule>` | `<rule>` | `<rule>` |
+
+For curve / qualitative observables, use a "Qualitative observable" sub-row (visual criterion, no numerical PASS).
+
+---
+
+## §7 Expected costs (campaign-level)
+
+- **per-run wall** (typical): `<unit>`
+- **per-run RAM peak**: `<GB>`
+- **per-run accelerator memory**: `<GB>` *(must fit in {{HARDWARE_TARGET}} budget)*
+- **per-run disk**: `<GB>`
+- **total runs**: `<from §4>`
+- **wall (with parallelism)**: `total_runs × per_run / max_parallel = <unit>`
+- **disk total**: `<GB>`
+
+**Hard budget gates** ({{HARD_BUDGETS}}):
+- single-run wall > `<your wall budget>` → split or reduce N/steps
+- accelerator memory > `<your accelerator budget>` → use coarser scheme
+- disk total > `<your disk budget>` → reduce stride or runs
+
+---
+
+## §8 Existing assets reused
+
+| Asset | Path | Reused / new |
+|-------|------|--------------|
+| {{TYPE_CONCEPT}} | `<class path>` | reused |
+| entry script | `{{ENTRY_SCRIPT}}` | reused / new |
+| analyzer | `<analyzer path>` | reused / new |
+| legacy ground truth | `<path>` | for cross-validation |
+
+If `new`, link to the test/spec proving it works.
+
+---
+
+## §9 Deliverables
+
+- **figures**: `fig<N>_<topic>.<ext>` × `<count>` in `<figures dir>`
+- **results doc**: `<TOPIC>_results.md`
+- **code**: `<list new files>`
+- **mapping table update**: yes / no
+- **paper / thesis chapter**: `§<N>`
+
+---
+
+## §10 Decision log
+
+Two sub-lists. Be honest in both — empty `Open questions for human` is what unblocks auto-mode, not an empty `Auto-decisions taken`.
+
+### §10a Auto-decisions taken (no human input needed)
+
+1. `<decision>` → `<rationale grounded in paper § or registry>`
+2. ...
+
+If empty, write `N/A — every parameter directly cited in paper`.
+
+### §10b Open questions for human (`ASK USER:` prefix required)
+
+1. `ASK USER: <question>` → `<options>`
+2. ...
+
+If empty, write `N/A — no open questions`.
+
+**Auto-mode rule**: §10b empty → proceed to Step 5. Non-empty → stop and surface.
+
+---
+
+## §11 Validation plan
+
+For each paper figure we expect to reproduce:
+
+| Paper fig | Our fig | Visual criterion |
+|-----------|---------|------------------|
+| Fig.X | `figN_<name>.<ext>` | qualitative shape match (peak position, scaling) |
+
+If applicable, list quantitative targets:
+- `<our_metric> within X% of paper_value`
+
+---
+
+## §12 Output config
+
+After this design is approved, emit:
+
+- `{{CONFIG_PATH_PATTERN}}`  *(matches `plan_config.schema.json`)*
+- Reference this design via `_design_doc` field in the config
+
+End of template.
