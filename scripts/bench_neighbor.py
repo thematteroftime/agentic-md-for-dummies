@@ -19,7 +19,7 @@ if cs.UNITS is None or cs.UNITS.name != "reduced":
 from atomSystemClass import AtomSystem
 from searchBox import searchBox
 from forces import HertzianNonreciprocal
-from integratorClass import integrator
+from integrators import BAOABDrag as integrator
 from dataFiles.lattice_gen import make_prx_square2d
 
 

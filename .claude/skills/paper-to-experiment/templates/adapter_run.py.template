@@ -35,7 +35,7 @@ os.chdir(SCRIPT_DIR)
 import constSet as cs
 from constSet import *
 from atomSystemClass import AtomSystem
-from integratorClass import integrator
+from integrators import BAOABDrag as integrator   # or another integrator from integrators/
 from systemClass import simulator, systemRun
 from searchBox import searchBox
 

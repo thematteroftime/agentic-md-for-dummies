@@ -24,7 +24,7 @@ if cs.UNITS is None or cs.UNITS.name != "reduced":
 from atomSystemClass import AtomSystem
 from searchBox import searchBox
 from forces import lennardJones
-from integratorClass import integrator
+from integrators import BAOABDrag as integrator
 
 
 def setup_lj_2d(N=64, T0=1.0, seed=0):

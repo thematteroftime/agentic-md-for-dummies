@@ -102,6 +102,16 @@
           "enum": ["reduced_lj", "macro_dust", "reduced_yukawa"],
           "description": "Closed-enum unit regime label. reduced_lj = (σ, ε, m=1, k_B=1) per PRX 2015; macro_dust = (mm, ms, K) per PRL 2008; reduced_yukawa = (a_WS, ω_p, Q=k_B=m=1) for Yukawa OCP. Add new values via the 8-step extension process in force_types.md §4."
         },
+        "integrator": {
+          "enum": ["baoab_drag"],
+          "description": "Time-integration scheme. Defaults to baoab_drag (the legacy BAOAB step ordering with deterministic-drag O step — no Wiener noise). Add new values via the 9-step integrator extension flow in force_types.md \"Adding a new integrator\". Schemes that need Wiener noise / Bussi thermostat / multi-time-step register here."
+        },
+        "T_target": {
+          "type": "number",
+          "minimum": 0.001,
+          "maximum": 1e4,
+          "description": "Target temperature for stochastic thermostats (Wiener-noise Langevin, Bussi, etc.). Required by integrators that declare T_target in REQUIRED_KWARGS; ignored by baoab_drag."
+        },
         "steps":  { "type": "integer", "minimum": 100, "maximum": 50000000 },
         "stride": { "type": "integer", "minimum": 1, "maximum": 100000 },
         "notes":  { "type": "string" },

@@ -35,7 +35,7 @@ if cs.UNITS is None or cs.UNITS.name != "reduced":
 from atomSystemClass import AtomSystem
 from searchBox import searchBox
 from forces import HertzianNonreciprocal
-from integratorClass import integrator
+from integrators import BAOABDrag as integrator
 
 
 def f_n_analytical(rho, r_max=1.0, n_pts=2000):

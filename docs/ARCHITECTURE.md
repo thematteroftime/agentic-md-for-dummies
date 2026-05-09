@@ -44,13 +44,15 @@ The framework is **strictly layered**. Each layer talks ONLY to the layer below 
 ║  • Class-name dispatch via registry                                    ║
 ║  • Manifest writing, log redirection, halt-on-fail                     ║
 ╠══════════════════════════════════════════════════════════════════════╣
-║  Layer 1 — INFRASTRUCTURE (FROZEN — physics core, do not modify)       ║
-║  systemClass.py, atomSystemClass.py, integratorClass.py,               ║
-║  searchBox.py, forces/, constSet.py                                    ║
-║  • Taichi 1.7.4 kernels: BAOAB integrator, cell-list/O(N²) neighbors   ║
+║  Layer 1 — INFRASTRUCTURE (math frozen; structural extensions OK)      ║
+║  systemClass.py, atomSystemClass.py, searchBox.py, constSet.py         ║
+║  forces/, integrators/  (one file per registered class)                ║
+║  • Taichi 1.7.4 kernels: cell-list / O(N²) neighbors                   ║
 ║  • HDF5 async chunked writer                                           ║
 ║  • Force classes (one file each in forces/):                           ║
-║    HertzianNonreciprocal, ERPotential, lennardJones                    ║
+║    HertzianNonreciprocal, ERPotential, lennardJones, KobAndersenLJ     ║
+║  • Integrator schemes (one file each in integrators/):                 ║
+║    BAOABDrag (drag-only Langevin; default)                             ║
 ║  Out of scope for now: integrators, accelerators (current sufficient)  ║
 ╚══════════════════════════════════════════════════════════════════════╝
                                   ▲

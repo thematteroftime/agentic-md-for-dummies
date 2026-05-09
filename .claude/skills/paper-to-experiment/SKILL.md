@@ -163,6 +163,14 @@ DO NOT launch the campaign yourself unless explicitly asked. The user owns the G
 
 ---
 
+## Adding a new integrator — 9-step extension process
+
+If the paper requires a time-integration scheme the existing integrators cannot faithfully reproduce — most commonly Wiener-noise (FD-balanced) Langevin for diffusion / viscosity / glass-transition observables, or Bussi NVT — walk the 9-step extension flow in `references/force_types.md §5b "Adding a new integrator"`. Briefly: subclass `IntegratorBase`, write tests, register in `integrators/__init__.py:INTEGRATOR_REGISTRY` AND `tools/registry.py:_REGISTRY`, add to the schema's `integrator` enum, and document in the §4 "Integrator selection" table. The default `baoab_drag` is fine for NVE and structural NVT, but plateaus MSD over Langevin runs (no Wiener noise).
+
+If the existing `baoab_drag` is the wrong tool for the paper's central observable, **propose the integrator extension up front in design doc §3** (`integrator: <new_scheme>`) and **stop** for user greenlight before walking step 1 — same gate as the 8-step force extension.
+
+---
+
 ## Adding a new force type — 8-step extension process
 
 When the paper requires a force / analyzer / visualizer not in the registry, walk through these 8 steps in order. The skill cannot ship a strict-validating, *visually-meaningful* config until **all 8** are merged.
@@ -201,6 +209,7 @@ After all 8 steps:
 | "The pipeline ran fine, manifest.json exists, done" | Hard rule #9: no `report.md` + no `fig*.png` = analyzer / visualizer never registered. Step 7 + 8 of the 8-step extension are not optional. |
 | "I'll register the analyzer in `tools/registry.py` only — skip the local `__init__.py`" | Forwarding station and local registry kept in sync is the framework contract. Both registers, or neither. |
 | "Random IC is fine, the Langevin will sort it out" | For long-range repulsive forces, random IC + short Langevin under-cools by ~10× (see force_types.md "Long-range repulsive IC caveat"). Use `tools/lattices/<lattice>` IC instead. |
+| "MSD plateaued in my Langevin run, must be a physics finding" | Probably the integrator: `baoab_drag` has no Wiener noise so caged particles never escape. If the paper's central observable is diffusion / viscosity / glass dynamics, you need a different integrator — walk the 9-step extension in `force_types.md §5b "Adding a new integrator"`. |
 | "I'll skip §10b open questions to keep flow" | §10b empty is the auto-mode gate. Lying about it produces wrong physics. |
 
 ---

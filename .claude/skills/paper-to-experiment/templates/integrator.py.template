@@ -1,0 +1,119 @@
+"""MyIntegrator — time-integration scheme.
+
+Implements the integrator contract from `integrators/base.py:IntegratorBase`:
+  __init__(self, timeStep, **kwargs)        # paper-specific kwargs
+  register(self, atomSystem, forceField)    # bind to physics neighbours
+  inteBegin(self)                           # advance one step
+
+To activate:
+  1. Save this file as `integrators/<your_scheme>.py`
+  2. **RENAME** the class `MyIntegrator` below to a Pascal-case scheme name
+     (e.g. `BAOABLangevin`, `BussiNVT`, `MultiTimestepNVT`).
+  3. Declare REQUIRED_KWARGS / OPTIONAL_KWARGS class tuples so the adapter
+     and validator can check campaign config completeness.
+  4. Register in `integrators/__init__.py:INTEGRATOR_REGISTRY`:
+       "<your_scheme_name>": <YourIntegrator>
+     (and add the import + __all__ entry above)
+  5. Mirror in `tools/registry.py:_REGISTRY` (integrators section).
+  6. Add the scheme name to the `integrator` enum in
+     `templates/plan_config.schema.json`.
+  7. Document in `references/force_types.md` "Adding a new integrator" §:
+     scheme description, required kwargs, when to use vs not use,
+     paper(s) that require it.
+
+Step kernels:
+  Each scheme has its own step ordering. Examples:
+    - Velocity Verlet:           B - A - F - B
+    - BAOAB Langevin (no noise): B - A - O - A - F - B
+    - BAOAB Langevin (Wiener):   B - A - O' - A - F - B   (O' = α·v + σ·R)
+    - Bussi NVT:                 (Verlet step) - rescale velocities
+
+Layer-1 contract reminders:
+- `inteBegin()` is called ONCE per simulation step by `simulator.simuNoData`
+  / `simuWithData`. Don't loop inside.
+- Read `self.atomSystem.pos / vel / force / mass / num_atoms / ndim`.
+- Write back `self.atomSystem.vel / pos`.
+- Call `self.forceField.updateAllF()` at the appropriate step (after the
+  position update; usually inside `inteBegin`).
+- Call `self.atomSystem.reduce_pe()` after `updateAllF` so the simulator's
+  kinetic-energy printout has the matching potential energy.
+- For ndim=2, call `self.atomSystem.zeroZ()` at the END of inteBegin so
+  spurious z-component noise / drift is wiped.
+"""
+import math
+from constSet import *
+from integrators.base import IntegratorBase
+
+
+@ti.data_oriented
+class MyIntegrator(IntegratorBase):           # RENAME this class — see header
+    """Paper <CITATION> integrator.
+
+    Scheme: <one-paragraph description of the step ordering and what the
+    integrator preserves / faithfully samples. Cite paper Eq. or appendix
+    if the scheme is paper-derived.>
+
+    Use when: <which physics regime / observable demands this integrator>
+    Do NOT use when: <regime where another scheme is more accurate>
+    """
+
+    REQUIRED_KWARGS = ("timeStep",)            # extend per paper
+    OPTIONAL_KWARGS = ()
+    SCHEME_NAME = "my_integrator"              # the registry key
+
+    def __init__(self, timeStep, **kwargs):
+        self.delta_t = float(timeStep)
+        self.delta_tHalf = self.delta_t / 2.0
+        # Store paper-specific parameters here, e.g.
+        #   self.nu = float(kwargs.get("nu", 0.0))
+        #   self.T_target = float(kwargs["T_target"])     # raises KeyError if missing
+        # If the scheme needs Wiener noise, derive sigma_factor here once:
+        #   self.damp = math.exp(-self.nu * self.delta_t)
+        #   self.sigma2_per_kT = (1.0 - self.damp**2)     # × kT/m at sample time
+        return
+
+    @ti.kernel
+    def step_B_half(self):
+        """Velocity half-kick from forces."""
+        for i in range(self.atomSystem.num_atoms):
+            self.atomSystem.vel[i] += (
+                self.atomSystem.force[i] / self.atomSystem.mass[i]
+                * self.delta_tHalf)
+
+    @ti.kernel
+    def step_A_half(self):
+        """Position half-drift."""
+        for i in range(self.atomSystem.num_atoms):
+            self.atomSystem.pos[i] += self.atomSystem.vel[i] * self.delta_tHalf
+
+    @ti.kernel
+    def step_O_full(self):
+        """Ornstein-Uhlenbeck step (or thermostat exchange).
+
+        For deterministic drag:
+            v ← α·v               (current BAOABDrag)
+
+        For Wiener-noise Langevin (fluctuation-dissipation balanced):
+            v ← α·v + σ(T)·R      where R ~ N(0, I), σ²(T) = (1 - α²)·k_B·T/m
+
+        Implementation note for Wiener: use Taichi's ti.randn() inside the
+        kernel; pass `T_target` and per-atom mass via instance attributes.
+        Apply zeroZ contract at outer inteBegin if ndim=2 — do NOT add z-
+        noise here; let zeroZ wipe it.
+        """
+        # TODO: implement scheme-specific O step
+        for i in range(self.atomSystem.num_atoms):
+            self.atomSystem.vel[i] *= ti.f64(1.0)    # placeholder
+
+    def inteBegin(self):
+        """One step. Subclasses pick the kernel ordering for their scheme."""
+        self.step_B_half()
+        self.step_A_half()
+        self.step_O_full()
+        self.step_A_half()
+        self.forceField.updateAllF()
+        self.atomSystem.reduce_pe()
+        self.step_B_half()
+        if self.atomSystem.ndim == 2:
+            self.atomSystem.zeroZ()
+        return

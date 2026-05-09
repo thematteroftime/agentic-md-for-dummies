@@ -139,7 +139,8 @@ If the user wants a placeholder config to draft analysis pipelines against, mark
 - **density (φ or n)**: `<value or "sweep">`
 - **boundary_conditions**: `periodic | wall | mixed`
 - **thermostat**: `NVE | Langevin(ν=<value>) | Bussi`
-- **integrator**: `BAOAB | Verlet | (other)`
+- **integrator**: `baoab_drag | <other registered scheme>` *(see `references/force_types.md` §4 "Integrator selection" table for currently registered schemes; default `baoab_drag` is drag-only Langevin (no Wiener noise) and fine for NVE / structural NVT but plateaus MSD over diffusive runs. If the paper's central observable is diffusion / viscosity / glass dynamics, propose a new integrator via the 9-step extension flow in `force_types.md §5b` and **stop for user greenlight before implementing**.)*
+- **integrator_kwargs**: `<dict of kwargs the integrator's REQUIRED_KWARGS declares>`  *(e.g. `{nu: 0.1}` for baoab_drag; `{nu: 0.1, T_target: 1.0}` for Wiener-noise Langevin once it lands)*
 - **initial_state**: `square_2d | triangular_2d | octagonal_2d | simple_cubic_3d | from_file | custom`
   *(default: `square_2d` for ndim=2, `simple_cubic_3d` for ndim=3. Override only when paper specifies. For long-range repulsive forces, random IC is forbidden — see `force_types.md §3 Long-range repulsive IC caveat`. Lattice generators live in `tools/lattices/`; pass paper-required parameters via the adapter's `lattice_params` dict.)*
 - **equilibration_steps**: `<int or 0>`

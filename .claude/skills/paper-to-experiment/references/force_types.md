@@ -207,7 +207,7 @@ Adding a new regime requires creating a new yaml under `units/`, then emitting t
 
 ### `ndim=2` requires `Lz ≥ cutoffNegh`
 
-Even though z is force-zeroed every integrator step (`integratorClass.inteBegin`), the underlying searchBox neighbour pass still runs through the 3D MIC kernel. If the lattice file's z-extent is below `cutoffNegh`, `atomSystemClass.addNegh` asserts at startup. **2D adapters must set the lattice's `Lz ≥ cutoffNegh`** (a flat slab is fine — z stays zero throughout integration). Document `cutoffNegh` ≈ 1.3·`cutoff` ≈ 6·λ as a reasonable default, then size Lz accordingly.
+Even though z is force-zeroed every integrator step (every concrete integrator's `inteBegin` ends with `if ndim==2: zeroZ()`), the underlying searchBox neighbour pass still runs through the 3D MIC kernel. If the lattice file's z-extent is below `cutoffNegh`, `atomSystemClass.addNegh` asserts at startup. **2D adapters must set the lattice's `Lz ≥ cutoffNegh`** (a flat slab is fine — z stays zero throughout integration). Document `cutoffNegh` ≈ 1.3·`cutoff` ≈ 6·λ as a reasonable default, then size Lz accordingly.
 
 ### Full-list pattern
 
@@ -235,6 +235,18 @@ For force types whose pair potential diverges (or stays large) as `r→0` — Co
 3. **Random IC + heavy short Langevin equilibration THEN swap to weak**: legitimate but parameter-sensitive.
 
 Any new force class subclassing `forceField` whose potential diverges at the origin SHOULD declare its IC expectation in the design doc §3 `initial_state` field (not random). Adapter default for ndim=2 is `square_2d`, ndim=3 is `simple_cubic_3d`; override only when paper specifies otherwise.
+
+### Integrator selection
+
+Time-integration scheme is a registered platform extension just like force_type. Set `integrator` in the experiment dict (default `"baoab_drag"`) to pick:
+
+| `integrator` | Scheme | Use when | Caveats |
+|--------------|--------|----------|---------|
+| `baoab_drag` | BAOAB step ordering, drag-only O step (`v *= exp(-ν·dt)`, no Wiener noise) | NVE (ν=0); structural-only NVT where small T drift is OK; legacy PRX/ER/KA-LJ runs | MSD plateaus over long Langevin runs; FD theorem violated; T_meas drifts away from T0 |
+
+Schemes register in `integrators/__init__.py:INTEGRATOR_REGISTRY` AND `tools/registry.py:_REGISTRY` (integrators section). For the full extension flow when a paper genuinely requires Wiener-noise Langevin / Bussi / multi-time-step / etc., see "Adding a new integrator" below.
+
+The integrator's `REQUIRED_KWARGS` / `OPTIONAL_KWARGS` class tuples drive what extra fields the campaign config must carry — e.g. `T_target` for FD-balanced Langevin. Adapter pulls those from the experiment dict and forwards via `inteParams`.
 
 ---
 
@@ -292,6 +304,55 @@ After all 8 steps:
 There is a tempting third option to "reuse" vs "extend": pick an existing force class that algebraically reduces to the target physics under a parameter setting (e.g. `ERPotential` with `MT=0` is mathematically a pure isotropic Yukawa). This produces a strict-validating config in 5 minutes WITHOUT going through Steps 1-8.
 
 **Do not do this for thesis-quality reproductions.** The manifest will lie about which physics ran (`force_class=ERPotential` instead of `YukawaIsotropic`), the dead anisotropy machinery is allocated and integrated even though it contributes zero, and downstream analyzers may misinterpret the data because they were written for the more general class. Surface this trade-off in design doc §10b as an `ASK USER:` decision, with the recommendation that thesis or published work should go through the full 8 steps.
+
+---
+
+## 5b. Adding a new integrator
+
+When a paper requires a time-integration scheme that the existing integrators cannot faithfully reproduce, walk these **9 steps** in order. Most commonly triggered by:
+
+- Diffusion / viscosity / glass-transition observables that demand FD-balanced Langevin (Wiener-noise BAOAB) — `baoab_drag` plateaus the MSD.
+- Bussi / Nose-Hoover / DPD thermostats with paper-specific coupling.
+- Multi-time-step / RESPA splittings.
+- Symplectic schemes specific to a Hamiltonian (e.g., constrained dynamics, rigid-body integrators).
+
+The flow mirrors the 8-step force extension but adds one extra step to wire the per-paper adapter:
+
+1. **Integrator class** (`integrators/<your_scheme>.py`)
+   - Subclass `IntegratorBase` from `integrators/base.py`.
+   - Declare `REQUIRED_KWARGS` / `OPTIONAL_KWARGS` / `SCHEME_NAME` class tuples / strings.
+   - Implement `__init__(self, timeStep, **kwargs)` and `inteBegin(self)`.
+   - Pattern: copy `integrators/baoab_drag.py` as the closest template; add the missing physics in `step_O_full` (or wherever your scheme differs).
+   - Use `templates/integrator.py.template` as a fresh scaffold if extending without a near-twin.
+
+2. **Tests** (mandatory before any production run)
+   - `tests/test_<scheme>_<N>cases.py` covering: NVE invariant preservation (energy drift over a long run), thermostat target hit (T_meas → T_target), and the kernel-level stochastic seed reproducibility if Wiener noise is used.
+
+3. **Local registry**
+   - Add to `integrators/__init__.py:INTEGRATOR_REGISTRY` and the `from ... import` block at the top.
+
+4. **Forwarding station**
+   - Mirror in `tools/registry.py:_REGISTRY` under the integrators section.
+
+5. **Schema**
+   - Add the scheme name to the `integrator` enum in `templates/plan_config.schema.json`.
+   - If the scheme requires extra fields (e.g. `T_target`), declare them as schema properties (already partially done — see existing `T_target` field) and add a conditional `if/then` in `allOf` requiring the field when `integrator: <scheme>` is set.
+
+6. **Validator (optional but recommended)**
+   - If the scheme has a stability rule (e.g. `dt × ω_max < 0.1`), encode it in `scripts/validate_config.py:check_force_type_specific` (or a parallel `check_integrator_specific` function) so misconfigured campaigns fail validation, not at runtime.
+
+7. **Adapter wiring**
+   - Each per-paper adapter that wants to use the new integrator imports the class and passes it to `systemRun(..., integrator=<NewClass>, ...)`.
+   - Build `inteParams` dict from the campaign-entry fields the integrator's `REQUIRED_KWARGS` declares.
+   - Existing adapters using `BAOABDrag` are unaffected — they keep their `from integrators import BAOABDrag as integrator` import.
+
+8. **Registry doc**
+   - Add a row to the **Integrator selection** table in §4 above with: scheme name, one-line description, "use when", "caveats".
+
+9. **Regression test for sync**
+   - The `tests/test_skill_regression.py:test_registry_local_init_sync` already covers the registry-vs-local-init invariant. Add the new integrator to the assertion in `tests/test_kalj_3cases.py`-style or a new `tests/test_<scheme>.py` so a missed registration is caught the next time `pytest -q` runs.
+
+After all 9 steps, the integrator is a first-class platform extension and any future paper can pick it via `"integrator": "<scheme_name>"` in its campaign entry.
 
 ---
 

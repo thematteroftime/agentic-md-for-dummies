@@ -31,7 +31,7 @@ cs.K_B = 1.0; cs.KE_E2 = 1.0
 from atomSystemClass import AtomSystem
 from searchBox import searchBox
 from forces import lennardJones
-from integratorClass import integrator
+from integrators import BAOABDrag as integrator
 import numpy as np
 
 N = 64

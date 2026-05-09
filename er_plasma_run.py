@@ -29,7 +29,7 @@ os.chdir(SCRIPT_DIR)
 import constSet as cs
 from constSet import *
 from atomSystemClass import AtomSystem
-from integratorClass import integrator
+from integrators import BAOABDrag as integrator
 from forces import ERPotential
 from systemClass import simulator, systemRun
 from searchBox import searchBox
