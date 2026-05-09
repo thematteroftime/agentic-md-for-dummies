@@ -1,0 +1,122 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "MD experiment campaign config",
+  "description": "Schema for configs/plan_*.json consumed by scripts/run_experiment.py",
+  "type": "object",
+  "required": ["campaign", "pipeline"],
+  "additionalProperties": false,
+  "properties": {
+    "_comment": {
+      "type": "string",
+      "description": "One-paragraph summary of why this campaign exists"
+    },
+    "_force_type_doc": { "type": "string" },
+    "_units_doc": { "type": "string" },
+    "_paper_ref": {
+      "type": "string",
+      "description": "Paper citation, e.g. 'Ivlev PRL 2008' or 'Ivlev PRX 2015'"
+    },
+    "_design_doc": {
+      "type": "string",
+      "description": "Path to docs/specs/YYYY-MM-DD-<topic>-design.md"
+    },
+    "_cell_list_threshold_N": {
+      "type": "integer",
+      "minimum": 100,
+      "maximum": 100000,
+      "description": "Hardware-dependent crossover N between O(N²) and cell-list neighbor algorithms. Default 3000; raise on slower GPUs, lower on faster ones. Used by validate_config to recommend cho=1 vs cho=2."
+    },
+    "campaign": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "$ref": "#/definitions/experiment" }
+    },
+    "pipeline": {
+      "type": "object",
+      "required": ["preflight", "production", "halt_on_fail"],
+      "additionalProperties": false,
+      "properties": {
+        "preflight":        { "type": "boolean" },
+        "smoke":            { "type": "boolean" },
+        "smoke_steps":      { "type": "integer", "minimum": 0, "maximum": 5000 },
+        "production":       { "type": "boolean" },
+        "analyze":          { "type": "boolean" },
+        "analyzer_class":   { "type": "string", "description": "Phase D: name of class registered in tools.registry. Defaults to PRXAnalyzer for back-compat." },
+        "analyzer_params":  { "type": "object", "description": "kwargs passed to AnalyzerCls.full_analysis()" },
+        "visualize": {
+          "type": "object",
+          "description": "Optional per-run visualization. Class resolved via tools.registry. When enabled=true, class is required.",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "class":   { "type": "string" },
+            "params":  { "type": "object" }
+          },
+          "if":   { "properties": { "enabled": { "const": true } } },
+          "then": { "required": ["class"] }
+        },
+        "halt_on_fail":     { "type": "boolean" },
+        "max_parallel":     { "type": "integer", "minimum": 1, "maximum": 4 }
+      }
+    },
+    "aggregation": {
+      "type": "object",
+      "description": "Cross-run aggregation. `class` resolves via tools.registry to an aggregator that implements .aggregate(run_dirs, output, plots, title, **params). Defaults to PRXAggregator for back-compat with existing plan_*.json files.",
+      "properties": {
+        "enabled":   { "type": "boolean" },
+        "class":     { "type": "string", "description": "Aggregator class name registered in tools.registry (e.g. PRXAggregator, ERAggregator). Default: PRXAggregator." },
+        "params":    { "type": "object", "description": "kwargs forwarded to AggCls.aggregate()" },
+        "output":    { "type": "string" },
+        "outputs":   { "type": "array", "items": { "type": "string" } },
+        "plots":     { "type": "array", "items": { "type": "string" } },
+        "runs":      { "type": "string" },
+        "title":     { "type": "string" }
+      }
+    }
+  },
+  "definitions": {
+    "experiment": {
+      "type": "object",
+      "required": ["force_type", "tag", "steps", "stride"],
+      "properties": {
+        "force_type": {
+          "enum": ["hertzian_nonreciprocal", "er_plasma"],
+          "description": "Must match a registered force_type in references/force_types.md"
+        },
+        "tag": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_]+$",
+          "minLength": 2,
+          "maxLength": 32,
+          "description": "Unique run identifier; no spaces/dashes"
+        },
+        "steps":  { "type": "integer", "minimum": 100, "maximum": 50000000 },
+        "stride": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "notes":  { "type": "string" },
+        "phi":    { "type": "number", "minimum": 0,    "maximum": 1.0 },
+        "T0":     { "type": "number", "minimum": 0.001,"maximum": 100  },
+        "nu":     { "type": "number", "minimum": 0,    "maximum": 10   },
+        "MT":     { "type": "number", "minimum": 0,    "maximum": 1.2  },
+        "Z_eff":  { "type": "number", "minimum": 1,    "maximum": 100000 },
+        "lambda_mm": { "type": "number", "minimum": 0.001, "maximum": 10 },
+        "T0_K":   { "type": "number", "minimum": 1,    "maximum": 10000 },
+        "dt_ms":  { "type": "number", "minimum": 0.0001, "maximum": 1   },
+        "N":      { "type": "integer", "minimum": 100, "maximum": 100000 },
+        "cho":    { "enum": [1, 2] },
+        "chunk_size": { "type": "integer", "minimum": 1, "maximum": 10000 },
+        "write_stride": { "type": "integer", "minimum": 1, "maximum": 100000 },
+        "profiler": { "type": "boolean" }
+      },
+      "allOf": [
+        {
+          "if":   { "properties": { "force_type": { "const": "hertzian_nonreciprocal" } } },
+          "then": { "required": ["phi", "T0"] }
+        },
+        {
+          "if":   { "properties": { "force_type": { "const": "er_plasma" } } },
+          "then": { "required": ["MT", "Z_eff", "lambda_mm", "T0_K", "dt_ms"] }
+        }
+      ]
+    }
+  }
+}

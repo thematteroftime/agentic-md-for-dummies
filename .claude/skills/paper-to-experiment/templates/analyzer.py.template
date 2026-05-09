@@ -1,0 +1,79 @@
+"""<MyAnalyzer> — paper-specific post-run analysis.
+
+Implements the analyzer contract from docs/ARCHITECTURE.md §3.3:
+  full_analysis(run_dir, **params) -> dict
+
+To activate:
+  1. Save this file as `tools/analyzers/<topic>.py`
+  2. Register in `tools/registry.py`:
+       _REGISTRY["<MyAnalyzer>"] = "tools.analyzers.<topic>:<MyAnalyzer>"
+  3. Reference in your config:
+       "pipeline": {"analyzer_class": "<MyAnalyzer>", "analyzer_params": {...}}
+"""
+from __future__ import annotations
+from pathlib import Path
+import json
+
+import numpy as np
+import h5py
+
+
+class <MyAnalyzer>:
+    """Paper <CITATION> analyzer.
+
+    Computes the observables defined in your design doc §1:
+      - <O1 description>     paper Eq.(<N>)
+      - <O2 description>     paper Fig.<N>
+    """
+
+    # Paper-derived constants (from docs/specs/<topic>-design.md §1)
+    PAPER_<METRIC_1> = <VALUE>          # cite paper Eq.(N)
+    TOLERANCE = 0.10                    # 10% pass threshold
+
+    @staticmethod
+    def load_run(run_dir):
+        """Read manifest + HDF5 trajectory, return raw record."""
+        run_dir = Path(run_dir)
+        manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
+        h5_path = manifest["h5_path"]
+        with h5py.File(h5_path, "r") as f:
+            time = f["time"][:]
+            pos = f["pos"][:]
+            # ... read whatever your analyzer needs
+        return {"manifest": manifest, "time": time, "pos": pos}
+
+    @staticmethod
+    def full_analysis(run_dir, **params):
+        """REQUIRED contract method.
+
+        Reads run_dir, computes all paper observables, returns dict containing:
+          - "verdict": "PASS" / "NEAR" / "FAIL"
+          - one key per metric with its value
+          - "params": echo of input params (for audit trail)
+        """
+        rec = <MyAnalyzer>.load_run(run_dir)
+
+        # Compute observables (TODO: replace with real physics)
+        metric_1 = float(np.mean(rec["time"]))    # placeholder
+        # metric_2 = ...
+
+        # Verdict
+        err_1 = abs(metric_1 - <MyAnalyzer>.PAPER_<METRIC_1>) / <MyAnalyzer>.PAPER_<METRIC_1>
+        if err_1 <= <MyAnalyzer>.TOLERANCE:
+            verdict = "PASS"
+        elif err_1 <= 2 * <MyAnalyzer>.TOLERANCE:
+            verdict = "NEAR"
+        else:
+            verdict = "FAIL"
+
+        return {
+            "verdict": verdict,
+            "metric_1": metric_1,
+            "err_1_pct": err_1 * 100,
+            "params": params,
+        }
+
+    @staticmethod
+    def aggregate(records, **params):
+        """OPTIONAL: cross-run summary for Phase 4."""
+        return {"n_runs": len(records)}

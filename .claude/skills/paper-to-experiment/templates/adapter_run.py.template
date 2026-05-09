@@ -1,0 +1,263 @@
+#!/usr/bin/env python3
+"""<TOPIC> adapter — Layer 3 entry script for paper <CITATION>.
+
+Implements the adapter contract from docs/ARCHITECTURE.md §3.1:
+  INPUT:  CLI flags injected by scripts/run_experiment.py:_invoke_md
+  OUTPUT: manifest.json + trajectory .h5 in outputFiles/<TS>_<tag>/
+  FORBIDDEN: calling analyzers/plotters/visualizers; touching other run dirs
+
+To create your adapter:
+  1. Copy this template to project root as `<topic>_run.py`
+  2. Replace ALL <PLACEHOLDERS> in upper-case
+  3. Replace `<FORCE_CLASS>` with your class from forceFieldClass.py
+  4. Add CLI flags for any per-experiment overrides
+  5. Update PARAMS dict with paper defaults
+  6. Run `python <topic>_run.py --tag smoke --steps 100` for a smoke test
+  7. Register the new force_type in:
+       - tools/registry.py (no — adapter is dispatched by force_type, not by class)
+       - .claude/skills/paper-to-experiment/references/force_types.md (add §N section)
+       - .claude/skills/paper-to-experiment/templates/plan_config.schema.json (enum + conditional required)
+       - scripts/run_experiment.py:_invoke_md (add elif branch)
+"""
+import datetime as _dt
+import json as _json
+import os
+import shutil as _shutil
+import subprocess as _subprocess
+import sys
+import time
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, SCRIPT_DIR)
+os.chdir(SCRIPT_DIR)
+
+# Layer 1 (infrastructure) — DO NOT modify these classes, only use them
+import constSet as cs
+from constSet import *
+from atomSystemClass import AtomSystem
+from integratorClass import integrator
+from systemClass import simulator, systemRun
+from searchBox import searchBox
+
+# TODO: import your paper's force class
+from forceFieldClass import <FORCE_CLASS>
+
+
+# ===========================================================================
+# §1 PARAMS (paper defaults — overridable by CLI flags below)
+# ===========================================================================
+# TODO: replace all <VALUE>s with paper defaults. Cite paper §/equation in comments.
+PARAMS = {
+    # Identity (always required)
+    "_tag":           "",
+    "_notes":         "",
+
+    # Physics (paper-specific — fill from paper §X)
+    "<param_1>":      <VALUE>,    # cite paper §X
+    "<param_2>":      <VALUE>,    # cite paper §Y
+
+    # MD numerics (usually paper-specified)
+    "N":              <VALUE>,    # particle count (or per-species if 2-species)
+    "dt":             <VALUE>,    # time step in your unit system
+    "T0":             <VALUE>,    # initial temperature
+    "nu":             <VALUE>,    # Langevin damping (0 = NVE)
+    "run_steps":      <VALUE>,    # default; overridable by --steps
+    "write_stride":   <VALUE>,    # default; overridable by --stride
+
+    # Output
+    "output_format":  "hdf5",     # do not change (HDF5 is the contract)
+    "chunk_size":     200,        # do not raise unless RAM headroom proven
+}
+
+DATA_DIR = "./dataFiles"
+OUTPUT_DIR = "./outputFiles"
+
+
+# ===========================================================================
+# §2 PER-PAPER HELPERS (lattice prep, etc. — write only what's paper-specific)
+# ===========================================================================
+def _prepare_lattice(p, suffix):
+    """TODO: build/copy initial config to dataFiles/<adapter>_lattice<suffix>.xyz.
+    Paper <CITATION> §X says <whatever the lattice rule is>.
+    """
+    lattice_dst = os.path.join(DATA_DIR, f"<topic>_lattice{suffix}.xyz")
+    # Either: copy from a fixed source file, or call lattice_gen helper, or compute inline.
+    raise NotImplementedError("TODO: implement lattice prep per paper §X")
+    return lattice_dst
+
+
+def _write_run_in(p, suffix):
+    """Write run.in file with physics params for systemRun(paramFile=run_in)."""
+    run_in_path = os.path.join(DATA_DIR, f"run_<topic>{suffix}.in")
+    with open(run_in_path, "w", encoding="utf-8") as f:
+        f.write(f"velocity   {p['T0']}        # initial T\n")
+        f.write(f"time_step  {p['dt']}\n")
+        f.write(f"run        {p['run_steps']}\n")
+        f.write(f"dimension  3\n")
+        f.write(f"units      <reduced|macro>      # MUST match force class expectation\n")
+        f.write(f"profiler   off                  # MANDATORY for steps >1e6 (OOM)\n")
+        f.write(f"nu         {p['nu']}\n")
+    return run_in_path
+
+
+# ===========================================================================
+# §3 MAIN — implements the 10-step adapter contract from ARCHITECTURE.md §3.1
+# ===========================================================================
+def main():
+    p = PARAMS
+    tag = p.get("_tag", "")
+    suffix = f"_{tag}" if tag else ""
+
+    # Step 1: per-run output dir (timestamp + tag)
+    _ts_now = _dt.datetime.now()
+    _ts_str = _ts_now.strftime("%Y%m%d_%H%M%S")
+    RUN_DIR = os.path.join(OUTPUT_DIR, f"{_ts_str}_{tag}" if tag else _ts_str)
+    os.makedirs(RUN_DIR, exist_ok=True)
+    print(f"[run] artifact dir: {RUN_DIR}")
+    _started_at_iso = _ts_now.isoformat(timespec="seconds")
+    _wall_begin = time.time()
+
+    # Step 2: preflight (cost estimate via Layer 2 ResourceEstimator)
+    _preflight = None
+    try:
+        from toolClass import ResourceEstimator
+        _preflight = ResourceEstimator.print_preflight({
+            "tag": tag, "N": p["N"], "steps": p["run_steps"],
+            "stride": p["write_stride"],
+            # TODO: include paper-specific keys ResourceEstimator may use
+            "phi": p.get("<phi>", "n/a"), "T0": p["T0"],
+            "chunk_size": p["chunk_size"], "dt": p["dt"],
+        })
+    except Exception as e:
+        print(f"[preflight] skipped: {e}")
+
+    # Step 3: prepare lattice
+    lattice_dst = _prepare_lattice(p, suffix)
+    print(f"[1/4] lattice: {lattice_dst}")
+
+    # Step 4: write run.in
+    run_in_path = _write_run_in(p, suffix)
+    print(f"[2/4] {run_in_path}: T0={p['T0']}, dt={p['dt']}, steps={p['run_steps']}, ν={p['nu']}")
+
+    # Step 5: build system
+    system = systemRun(paramFile=run_in_path, coorFile=lattice_dst)
+    system.register(AtomSystem, integrator, simulator, <FORCE_CLASS>, searchBox)
+
+    # Step 6: initParams (TODO: fill with paper-specific values)
+    cho = p.get("_cho", 1 if p["N"] > 3000 else 2)
+    system.initParams(
+        fFieldParams={
+            # TODO: fill keys expected by <FORCE_CLASS>.__init__
+            "<key1>": p["<param_1>"],
+        },
+        boxParams={"choose": cho, "cutoffNegh": <CUTOFF_NEGH_VALUE>},
+        atomParams={"cutoff": <CUTOFF_VALUE>},
+        inteParams={"nu": p["nu"]},
+        simuParams={
+            "write_stride": p["write_stride"],
+            "output_format": p["output_format"],
+            "chunk_size": p["chunk_size"],
+        },
+    )
+
+    # Step 7: production run
+    out_base = f"<TOPIC>{suffix}"
+    out_path_abs = os.path.abspath(os.path.join(RUN_DIR, out_base))
+    print(f"[3/4] running <TOPIC> MD ...")
+    system.runWithData(outputPath=out_path_abs, withData=True)
+
+    run_step_int = int(system.runStep)
+    out_ext = ".h5" if p["output_format"] == "hdf5" else ".xyz"
+    out_file = os.path.abspath(os.path.join(
+        RUN_DIR, f"{out_base}_{run_step_int}{out_ext}"))
+    _wall_end = time.time()
+    _wall_seconds = _wall_end - _wall_begin
+    print(f"[4/4] done. output: {out_file}")
+    print(f"[wall] {_wall_seconds:.1f} s = {_wall_seconds/3600:.2f} hr")
+
+    # Step 8: archive run.in + lattice
+    try:
+        _shutil.copy2(run_in_path, os.path.join(RUN_DIR, "run.in"))
+        _shutil.copy2(lattice_dst, os.path.join(RUN_DIR, "lattice.xyz"))
+    except Exception as e:
+        print(f"[warn] could not archive inputs: {e}")
+
+    # Step 9: write manifest.json (the SOLE communication channel to platform)
+    _git_sha = "unknown"
+    try:
+        _git_sha = _subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=SCRIPT_DIR, text=True).strip()
+    except Exception:
+        pass
+
+    manifest = {
+        # Required fields (contract §3.2)
+        "tag":             tag,
+        "run_type":        "<force_type_string>",       # e.g. "hertzian_nonreciprocal"
+        "force_class":     "<FORCE_CLASS>",
+        "units":           "<reduced|macro>",
+        "run_dir":         RUN_DIR,
+        "h5_path":         out_file,
+        "started_at":      _started_at_iso,
+        "finished_at":     _dt.datetime.now().isoformat(timespec="seconds"),
+        "wall_seconds":    _wall_seconds,
+        "git_sha":         _git_sha,
+        "steps":           int(p["run_steps"]),
+        "write_stride":    int(p["write_stride"]),
+        "actual_step_rate": (int(p["run_steps"]) / _wall_seconds
+                              if _wall_seconds > 0 else None),
+
+        # Paper-specific fields (analyzer reads these)
+        "N":               p["N"],
+        "dt":              p["dt"],
+        "T0":              p["T0"],
+        "nu":              p["nu"],
+        "<paper_param_1>": p["<param_1>"],
+        "<paper_param_2>": p["<param_2>"],
+
+        # Bookkeeping
+        "notes":           p.get("_notes", ""),
+        "preflight":       _preflight,
+        "chunk_size":      p["chunk_size"],
+        "cho":             cho,
+    }
+    with open(os.path.join(RUN_DIR, "manifest.json"), "w", encoding="utf-8") as f:
+        _json.dump(manifest, f, indent=2)
+    print(f"[manifest] wrote {os.path.join(RUN_DIR, 'manifest.json')}")
+
+    # Step 10: STOP HERE. Do NOT call analyzers/plotters/visualizers.
+    # Platform's Phase 3.5 (visualize) and Phase 4 (aggregate) handle that.
+    print("[done] adapter finished. Platform will dispatch analyze/visualize.")
+
+
+# ===========================================================================
+# §4 CLI — flags MUST mirror force_type required+optional fields in
+#          .claude/skills/paper-to-experiment/references/force_types.md
+# ===========================================================================
+if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser(description="<TOPIC> adapter (paper <CITATION>)")
+    parser.add_argument("--tag", default="", help="run id (matches campaign entry tag)")
+    parser.add_argument("--steps", type=int, help="MD steps")
+    parser.add_argument("--stride", type=int, help="HDF5 write_stride")
+    parser.add_argument("--N", type=int, help="particle count")
+    parser.add_argument("--T0", type=float, help="initial temperature")
+    parser.add_argument("--nu", type=float, help="Langevin damping")
+    parser.add_argument("--cho", type=int, choices=[1, 2], help="neighbor algo")
+    # TODO: add paper-specific flags (e.g. --MT, --Z-eff, --phi)
+    parser.add_argument("--<paper_flag>", type=float, dest="<paper_param_1>",
+                         help="paper-specific param (cite §X)")
+
+    args = parser.parse_args()
+    if args.tag is not None:    PARAMS["_tag"] = args.tag
+    if args.steps is not None:  PARAMS["run_steps"] = args.steps
+    if args.stride is not None: PARAMS["write_stride"] = args.stride
+    if args.N is not None:      PARAMS["N"] = args.N
+    if args.T0 is not None:     PARAMS["T0"] = args.T0
+    if args.nu is not None:     PARAMS["nu"] = args.nu
+    if args.cho is not None:    PARAMS["_cho"] = args.cho
+    # TODO: thread paper-specific flags
+    # if args.<paper_param_1> is not None: PARAMS["<param_1>"] = args.<paper_param_1>
+
+    main()

@@ -1,0 +1,48 @@
+{
+  "_comment": "Plan C remaining experiments (E6, E7, E8). E5 was launched before this config existed; it will be picked up by the aggregation stage if present in outputFiles/. Run via: python scripts/run_experiment.py configs/plan_c_remaining.json",
+  "campaign": [
+    {
+      "tag": "E6",
+      "phi": 0.7,
+      "T0": 1.0,
+      "N": 10000,
+      "steps": 5000000,
+      "stride": 600,
+      "notes": "Plan C 2/4 — multi-phi Fig 2 long-time at phi=0.7"
+    },
+    {
+      "tag": "E7",
+      "phi": 0.9,
+      "T0": 1.0,
+      "N": 10000,
+      "steps": 5000000,
+      "stride": 600,
+      "notes": "Plan C 3/4 — multi-phi Fig 2 long-time at phi=0.9"
+    },
+    {
+      "tag": "E8",
+      "phi": 0.3,
+      "T0": 0.3,
+      "N": 10000,
+      "steps": 12500000,
+      "stride": 600,
+      "notes": "Plan C 4/4 — stability extension of E1v3 setup to 50000 tau"
+    }
+  ],
+  "pipeline": {
+    "preflight": true,
+    "smoke": true,
+    "smoke_steps": 2000,
+    "production": true,
+    "analyze": true,
+    "halt_on_fail": true,
+    "max_parallel": 2
+  },
+  "aggregation": {
+    "enabled": true,
+    "output": "docs/PRX_plan_c_results.md",
+    "plots": ["fig1", "fig2", "stability"],
+    "runs": "outputFiles/*_E[1-9]*",
+    "title": "Plan C — long-time NVE validation (E1v3 + E5-E8)"
+  }
+}

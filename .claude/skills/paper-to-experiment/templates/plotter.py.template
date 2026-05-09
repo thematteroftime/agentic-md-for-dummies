@@ -1,0 +1,53 @@
+"""<MyPlotter> — paper-specific publication figure builder.
+
+Implements the plotter contract from docs/ARCHITECTURE.md §3.5:
+  static fig_<name>(records, out_path, **params)
+
+Each fig_<name> method produces ONE publication figure. Multiple methods
+are typical (one per thesis section). Aggregator script picks methods by
+short name from `pipeline.aggregation.plots: ["fig1", "fig2", ...]`.
+
+To activate:
+  1. Save as `tools/plotters/<topic>.py`
+  2. Register in `tools/registry.py`:
+       _REGISTRY["<MyPlotter>"] = "tools.plotters.<topic>:<MyPlotter>"
+"""
+from __future__ import annotations
+from pathlib import Path
+
+import numpy as np
+import matplotlib
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+
+
+class <MyPlotter>:
+    """Paper <CITATION> figure builder."""
+
+    @staticmethod
+    def fig1_<topic>(records, out_path, title: str = "Figure 1", **params):
+        """REQUIRED contract method (rename per topic).
+
+        records:  list of dicts from <MyAnalyzer>.load_run()
+        out_path: where to write the .png
+        params:   forwarded from pipeline.aggregation.plot_params
+        """
+        fig, ax = plt.subplots(figsize=(7, 5))
+        for rec in records:
+            tag = rec["manifest"].get("tag", "?")
+            # TODO: plot rec data
+            ax.plot(rec["time"], np.zeros_like(rec["time"]), label=tag)
+        ax.set_xlabel("t")
+        ax.set_ylabel("<observable>")
+        ax.set_title(title)
+        ax.legend()
+        ax.grid(alpha=0.3)
+        plt.tight_layout()
+        plt.savefig(out_path, dpi=140, bbox_inches="tight")
+        plt.close(fig)
+        print(f"[plotter] wrote {out_path}")
+
+    @staticmethod
+    def fig2_<another>(records, out_path, **params):
+        """TODO: another paper figure (replicate paper Fig.N or Fig.M)."""
+        raise NotImplementedError

@@ -1,0 +1,57 @@
+{
+  "_comment": "Plan D — fill paper PRX 2015 Fig 1 + Fig 2 coverage gaps. Adds 4 long-time runs at canonical (phi, T0) coordinates the paper sweeps. Run via: python scripts/run_experiment.py configs/plan_d_paper_coverage.json. Naming convention phi<N>_T<M> = (phi=N/10, T0=M).",
+  "campaign": [
+    {
+      "tag": "phi03_T01",
+      "phi": 0.3,
+      "T0": 0.1,
+      "N": 10000,
+      "steps": 5000000,
+      "stride": 600,
+      "notes": "Paper Fig 1 row T0=0.1 — low-T0 case with long plateau, slope expected to reach ~0.6 by t=20000 tau"
+    },
+    {
+      "tag": "phi03_T1",
+      "phi": 0.3,
+      "T0": 1.0,
+      "N": 10000,
+      "steps": 5000000,
+      "stride": 600,
+      "notes": "Paper Fig 1 row T0=1 + Fig 2 row phi=0.3 (shared anchor) — fills both sweeps, slope expected ~0.55-0.60 (similar to E5/E6/E7)"
+    },
+    {
+      "tag": "phi03_T10",
+      "phi": 0.3,
+      "T0": 10,
+      "N": 10000,
+      "steps": 5000000,
+      "stride": 600,
+      "notes": "Paper Fig 1 row T0=10 — high-T0 case, transient very long, slope likely ~0.3-0.4 (still in transient at 20000 tau)"
+    },
+    {
+      "tag": "phi01_T1",
+      "phi": 0.1,
+      "T0": 1.0,
+      "N": 10000,
+      "steps": 5000000,
+      "stride": 600,
+      "notes": "Paper Fig 2 row phi=0.1 — low-density case, transient long, slope likely ~0.4-0.5"
+    }
+  ],
+  "pipeline": {
+    "preflight": true,
+    "smoke": true,
+    "smoke_steps": 2000,
+    "production": true,
+    "analyze": true,
+    "halt_on_fail": true,
+    "max_parallel": 2
+  },
+  "aggregation": {
+    "enabled": true,
+    "output": "docs/PRX_full_coverage_results.md",
+    "plots": ["fig1", "fig2", "stability"],
+    "runs": "outputFiles/*_phi*",
+    "title": "PRX 2015 — full Fig 1 + Fig 2 paper-coverage (E1v3 + E5-E8 + Plan D)"
+  }
+}

@@ -1,0 +1,63 @@
+# Append this class to `forceFieldClass.py` (do NOT save as a separate file —
+# Layer 1 infrastructure is consolidated in forceFieldClass.py).
+#
+# After appending:
+#   1. Write tests: tests/test_<class>_4cases.py (mandatory before any production run)
+#   2. Update force_types.md: add §N section per `references/force_types.md` §3
+#   3. Update plan_config.schema.json: add to force_type enum + conditional required fields
+#   4. Update scripts/run_experiment.py:_invoke_md: add elif branch
+#
+# This template covers the REQUIRED interface in forceFieldClass.py (other classes
+# in that file all conform).
+
+import taichi as ti
+
+
+@ti.data_oriented
+class <NewForceClass>:
+    """Paper <CITATION> force, Eq.(<N>).
+
+    V(<args>) = <formula>
+
+    Reciprocity: <reciprocal | non-reciprocal>
+    Cutoff:      <expression>
+    Units:       <reduced | macro>
+    """
+
+    # MUST be a class attribute, NOT instance — searchBox reads it before __init__
+    requires_full_list = True   # set False only if force is short-range and you want O(N²) on half-list
+
+    # OPTIONAL: PE coefficient hint for atomSystem.reduce_pe()
+    # full_list:  pe_per_atom += 0.5 * U_pair  (each pair counted once)
+    # half_list:  pe_per_atom += U_pair        (each pair counted once)
+
+    def __init__(self, <param_1>=1.0, <param_2>=1.0, **kwargs):
+        """TODO: Document params. Should accept the keys passed in
+        adapter's `system.initParams(fFieldParams={...})` block."""
+        self.<param_1> = <param_1>
+        self.<param_2> = <param_2>
+
+    @ti.kernel
+    def updateAllF(self, atomSystem: ti.template(), searchBox: ti.template()):
+        """Compute all pair forces, write into atomSystem.f and atomSystem.pe_per_atom.
+
+        Pattern (mirror existing classes in forceFieldClass.py):
+          - iterate (i, jj) over neighbor list
+          - compute r = pos[j] - pos[i]
+          - apply MIC (minimum-image convention) for periodic BC
+          - compute |r|, return early if |r| > cutoff
+          - compute force magnitude F_mag and direction r̂
+          - atomSystem.f[i] -= F_mag * r̂
+          - atomSystem.f[j] += F_mag * r̂   (reciprocal — Newton's 3rd law)
+                                            OR break this for non-reciprocal forces
+          - atomSystem.pe_per_atom[i] += 0.5 * U_pair
+        """
+        N = atomSystem.N[None]
+        for i in range(N):
+            # TODO: implement force kernel per paper Eq.(<N>)
+            pass
+
+    # OPTIONAL: shutdown hook
+    def cleanup(self):
+        """Called by systemRun on exit. Free any temp Taichi fields here."""
+        pass

@@ -1,0 +1,94 @@
+{
+  "_comment": "Plan G — PRL 2008 ER plasma reproduction. Reuses existing ERPotential force class (forceFieldClass.py:117-172, anisotropic Yukawa V = α[exp(-r/λ)/r - 0.43·MT²·λ²·(3cos²θ-1)/r³]). Macro units (mm, ms, K). Verified against legacy ER_Sim_MT12 output at frame 50000 (chain spacing r≈0.21mm = 4.3λ, g_∥(r) dominant, g_⊥(r) flat). Sweep MT to capture chain-formation phase transition. Run length 50000 steps to avoid late-time instability seen at frame 99999 of legacy run.",
+  "_force_type_doc": "ERPotential (anisotropic Yukawa)",
+  "_units_doc": "macro (mm, ms, K)",
+  "campaign": [
+    {
+      "force_type": "er_plasma",
+      "tag": "ER1_MT00",
+      "MT": 0.0,
+      "Z_eff": 10000,
+      "lambda_mm": 0.05,
+      "N": 1000,
+      "T0_K": 348,
+      "dt_ms": 0.01,
+      "steps": 50000,
+      "stride": 100,
+      "nu": 0.1,
+      "cho": 2,
+      "notes": "Plan G 1/5 — MT=0 baseline (isotropic Yukawa). NO chain formation expected. Control."
+    },
+    {
+      "force_type": "er_plasma",
+      "tag": "ER2_MT04",
+      "MT": 0.4,
+      "Z_eff": 10000,
+      "lambda_mm": 0.05,
+      "N": 1000,
+      "T0_K": 348,
+      "dt_ms": 0.01,
+      "steps": 50000,
+      "stride": 100,
+      "nu": 0.1,
+      "cho": 2,
+      "notes": "Plan G 2/5 — weak anisotropy. Expect mild chain tendency."
+    },
+    {
+      "force_type": "er_plasma",
+      "tag": "ER3_MT06",
+      "MT": 0.6,
+      "Z_eff": 10000,
+      "lambda_mm": 0.05,
+      "N": 1000,
+      "T0_K": 348,
+      "dt_ms": 0.01,
+      "steps": 50000,
+      "stride": 100,
+      "nu": 0.1,
+      "cho": 2,
+      "notes": "Plan G 3/5 — moderate. Expect partial chain formation."
+    },
+    {
+      "force_type": "er_plasma",
+      "tag": "ER4_MT08",
+      "MT": 0.8,
+      "Z_eff": 10000,
+      "lambda_mm": 0.05,
+      "N": 1000,
+      "T0_K": 348,
+      "dt_ms": 0.01,
+      "steps": 50000,
+      "stride": 100,
+      "nu": 0.1,
+      "cho": 2,
+      "notes": "Plan G 4/5 — same as legacy ER_Sim_MT12 (validation). Expect strong chains."
+    },
+    {
+      "force_type": "er_plasma",
+      "tag": "ER5_MT10",
+      "MT": 1.0,
+      "Z_eff": 10000,
+      "lambda_mm": 0.05,
+      "N": 1000,
+      "T0_K": 348,
+      "dt_ms": 0.01,
+      "steps": 50000,
+      "stride": 100,
+      "nu": 0.1,
+      "cho": 2,
+      "notes": "Plan G 5/5 — sonic limit. Expect strongest chains, possibly wider perpendicular spacing."
+    }
+  ],
+  "pipeline": {
+    "preflight": true,
+    "smoke": false,
+    "smoke_steps": 0,
+    "production": true,
+    "analyze": false,
+    "halt_on_fail": true,
+    "max_parallel": 2
+  },
+  "aggregation": {
+    "enabled": false
+  }
+}

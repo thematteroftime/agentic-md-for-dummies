@@ -1,0 +1,58 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+.venv/
+venv/
+.pytest_cache/
+
+# Taichi cache
+.taichi_cache/
+.ti_cache/
+
+# Editors
+.vscode/
+.idea/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# ─────────────────────────────────────────────────────────────────
+# Run outputs (per-experiment, large; users should regenerate)
+# ─────────────────────────────────────────────────────────────────
+outputFiles/
+*.h5
+*.hdf5
+*.xyz
+*.dump
+*.log
+profiler_log_*.txt
+
+# Input data (large lattices, etc.) — track only Python helpers
+dataFiles/
+!dataFiles/*.py
+
+# ─────────────────────────────────────────────────────────────────
+# Copyrighted material (do NOT publish — users must obtain themselves)
+# ─────────────────────────────────────────────────────────────────
+papers/*.pdf
+papers/*.txt
+papers/rendered/
+
+# ─────────────────────────────────────────────────────────────────
+# Internal development artifacts (sub-agent specs, refactor history)
+# ─────────────────────────────────────────────────────────────────
+docs/specs/
+docs/_run_baseline.py
+docs/superpowers/
+mypaper/
+
+# Personal author material (not for OSS lib release)
+docs/THESIS_DRAFT.md
+docs/MD_test1_重构_implementation_plan.md
+docs/MD_test1_重构与复现计划.md
+imgui.ini

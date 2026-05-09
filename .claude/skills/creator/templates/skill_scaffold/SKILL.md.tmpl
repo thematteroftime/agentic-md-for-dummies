@@ -1,0 +1,74 @@
+---
+name: paper-to-experiment-{{FRAMEWORK_NAME}}
+description: Use when reproducing a physics paper (or part of one) in {{FRAMEWORK_NAME}}. Takes a paper, walks the design template, validates against schema, emits a runnable {{CONFIG_FORMAT}} config consumed by `{{ENTRY_SCRIPT}}`.
+---
+
+# Paper → Experiment ({{FRAMEWORK_NAME}})
+
+You design a simulation campaign for {{FRAMEWORK_NAME}}. Output: validated `{{CONFIG_PATH_PATTERN}}` that {{ENTRY_SCRIPT}} can launch.
+
+## Hard rules
+
+1. **Read `{{REGISTRY_PATH}}` first.** Only registered `{{TYPE_CONCEPT}}` strings are valid. Known types: {{REGISTERED_TYPES}}.
+2. **Citations mandatory.** Every observable cites paper Eq./Fig. number. No bare claims.
+3. **Smoke before production.** `pipeline.smoke=true`, `smoke_steps ≥ 100`. Override only with explicit user note.
+4. **Validation gate.** `python {{VALIDATOR_PATH}} <path> --strict` must exit 0 before handoff.
+5. **Budget.** Single-run wall > {{HARD_WALL_HR}} hr or VRAM > {{HARD_VRAM_GB}} GB → propose smaller N or steps, don't ask user to approve.
+6. **No silent invention.** Missing paper params → ASK USER:, never guess.
+7. **Reuse before extending.** New `{{TYPE_CONCEPT}}` only when no existing one matches paper Eq.
+
+## Process
+
+```
+1. Read paper → 2. Fill design → 3. User gate → 4. Emit config → 5. Validate → 6. Hand off
+```
+
+### Step 1 — Read paper
+
+In order: paper PDF, `references/{{TYPE_REGISTRY_FILE}}`, `references/examples/`. Identify: which `{{TYPE_CONCEPT}}` to use; primary observables; figures to claim reproduction of; analytical fingerprints.
+
+### Step 2 — Fill design
+
+Copy `templates/design.md` to `docs/specs/<TS>-<topic>-design.md`. Replace every placeholder. §1 (observables) is the spine.
+
+### Step 3 — User gate
+
+Save + cite path. List §10b `ASK USER:` items. Auto-mode: proceed if §10b empty.
+
+### Step 4 — Emit config
+
+Generate `{{CONFIG_PATH_PATTERN}}` from approved design. Each campaign entry has only fields listed in `{{TYPE_REGISTRY_FILE}}` for the chosen `{{TYPE_CONCEPT}}`. Required top-level: `_paper_ref`, `_design_doc`, `campaign`, `pipeline`.
+
+### Step 5 — Validate
+
+Run validator with `--strict`. If exit ≠ 0, fix JSON, re-run.
+
+### Step 6 — Hand off
+
+Tell user: design doc path, config path, validation summary, exact launch command. Never auto-launch — user owns the GPU-burn decision.
+
+## Anti-patterns
+
+| Thought | Reality |
+|---|---|
+| "Skip the design doc — it's just one run" | The design doc IS the audit trail. |
+| "I can guess the paper's φ" | No. Cite or ask. |
+| "Smoke wastes 30 seconds" | Smoke saves 30 minutes when something's broken. |
+| "Fix warnings later" | Validator green BEFORE handoff. |
+| "Quick test launch" | User owns launch. |
+| "12 sweep dims, easy" | Hard cap 12; split if more. |
+
+## Files
+
+```
+.claude/skills/paper-to-experiment-{{FRAMEWORK_NAME}}/
+├── SKILL.md                            # this
+├── templates/
+│   ├── design.md                       # 12-section template
+│   └── plan_config.schema.json         # JSON Schema for {{CONFIG_PATH_PATTERN}}
+└── references/
+    ├── {{TYPE_REGISTRY_FILE}}          # known {{TYPE_CONCEPT}}s + their fields
+    └── examples/                        # exemplar configs from this project
+```
+
+End.

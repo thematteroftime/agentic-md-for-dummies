@@ -1,0 +1,62 @@
+{
+  "_comment": "Plan G2 — extended ER plasma runs at 100000 steps (= legacy ER_Sim_MT12 length, 1000 ms). Plan G1 (50000 steps) only captured lattice-preservation regime; chains form in second-half of legacy run. ER4_MT08 here is a DIRECT REPLICATION of legacy ER_Sim_MT12 (same params, same length).",
+  "campaign": [
+    {
+      "force_type": "er_plasma",
+      "tag": "ER1L_MT00",
+      "MT": 0.0,
+      "Z_eff": 10000,
+      "lambda_mm": 0.05,
+      "N": 1000,
+      "T0_K": 348,
+      "dt_ms": 0.01,
+      "steps": 100000,
+      "stride": 200,
+      "nu": 0.1,
+      "cho": 2,
+      "notes": "Plan G2 1/3 — MT=0 long control (1000ms total)"
+    },
+    {
+      "force_type": "er_plasma",
+      "tag": "ER4L_MT08",
+      "MT": 0.8,
+      "Z_eff": 10000,
+      "lambda_mm": 0.05,
+      "N": 1000,
+      "T0_K": 348,
+      "dt_ms": 0.01,
+      "steps": 100000,
+      "stride": 200,
+      "nu": 0.1,
+      "cho": 2,
+      "notes": "Plan G2 2/3 — DIRECT REPLICATION of legacy ER_Sim_MT12 (validation)"
+    },
+    {
+      "force_type": "er_plasma",
+      "tag": "ER5L_MT10",
+      "MT": 1.0,
+      "Z_eff": 10000,
+      "lambda_mm": 0.05,
+      "N": 1000,
+      "T0_K": 348,
+      "dt_ms": 0.01,
+      "steps": 100000,
+      "stride": 200,
+      "nu": 0.1,
+      "cho": 2,
+      "notes": "Plan G2 3/3 — sonic limit long-time (does melted state recover into chains?)"
+    }
+  ],
+  "pipeline": {
+    "preflight": true,
+    "smoke": false,
+    "smoke_steps": 0,
+    "production": true,
+    "analyze": false,
+    "halt_on_fail": true,
+    "max_parallel": 2
+  },
+  "aggregation": {
+    "enabled": false
+  }
+}

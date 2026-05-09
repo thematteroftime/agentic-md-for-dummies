@@ -1,0 +1,58 @@
+"""<MyViz> — paper-specific real-time visualization.
+
+Implements the visualizer contract from docs/ARCHITECTURE.md §3.4:
+  __init__(**params), .render(run_dir) -> None
+
+To activate:
+  1. Save as `tools/visualizers/<topic>.py`
+  2. Register in `tools/registry.py`:
+       _REGISTRY["<MyViz>"] = "tools.visualizers.<topic>:<MyViz>"
+  3. Enable in config:
+       "pipeline": {"visualize": {"enabled": true, "class": "<MyViz>", "params": {...}}}
+"""
+from __future__ import annotations
+from pathlib import Path
+
+import numpy as np
+import h5py
+
+
+class <MyViz>:
+    """Paper <CITATION> visualization.
+
+    Choose ONE backend; do NOT mix (perf):
+      A. Taichi UI    — best for N>1000, GPU-accelerated, requires display
+      B. matplotlib  — easy, slow past N=500 frames; OK for static figures
+      C. plotly      — browser, easy to share, ~200 frame limit before lag
+    """
+
+    def __init__(self, color_mode: str = "index",
+                  record: str | None = None, fps: int = 60, **extra):
+        self.color_mode = color_mode
+        self.record = record       # if str, render mp4 instead of window
+        self.fps = fps
+        self.extra = extra
+
+    def render(self, run_dir):
+        """REQUIRED contract method.
+
+        run_dir: path to single run directory (contains manifest.json + *.h5).
+        Should open interactive window OR write file (if self.record set).
+        """
+        run_dir = Path(run_dir)
+        h5_path = next(run_dir.glob("*.h5"))
+
+        with h5py.File(h5_path, "r") as f:
+            pos = f["pos"][:]
+            t = f["time"][:]
+
+        # TODO: implement visualization. Examples:
+        #
+        # Option A: Taichi UI (use scripts/visualize_er_h5.py as reference)
+        # Option B: matplotlib animation
+        # Option C: plotly with frame slider
+        raise NotImplementedError("TODO: implement render() per §3.4 contract")
+
+    def show(self, run_dir):
+        """OPTIONAL alias for render()."""
+        return self.render(run_dir)
