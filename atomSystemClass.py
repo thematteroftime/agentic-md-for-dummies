@@ -82,10 +82,18 @@ class atomBase:
         self.numUpdates = 0
         self.cutoffNegh = cutoffNegh
         if self.ndim == 2:
+            # Even in 2D mode the underlying neighbour list runs in 3D, so
+            # the z-axis MIC check (in searchBox.applyMic) requires Lz to be
+            # at least cutoffNegh — otherwise a single particle could be
+            # its own image along z and the pair count blows up. Set Lz =
+            # max(1.05·cutoffNegh, 1.0) in your adapter when constructing
+            # the lattice for ndim=2 papers.
             box_np = self.boxList.to_numpy()[0]    # row 0 = box matrix
             assert box_np[2, 2] >= cutoffNegh, (
-                "ndim=2 requires Lz >= cutoffNegh; "
-                f"got Lz={box_np[2, 2]}, cutoffNegh={cutoffNegh}"
+                f"ndim=2 box Lz={box_np[2, 2]} < cutoffNegh={cutoffNegh}. "
+                f"For 2D adapters set Lz ≥ cutoffNegh in the lattice (a flat "
+                f"slab is fine; z is force-zeroed every step in the integrator). "
+                f"See references/force_types.md compat note for ndim=2 force types."
             )
         self.nNum = ti.field(dtype=ti.i32, shape=self.num_atoms)
         self.nList = ti.field(dtype=ti.i32, shape=(self.num_atoms, mN))

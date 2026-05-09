@@ -41,16 +41,26 @@ class <NewForceClass>:
     def updateAllF(self, atomSystem: ti.template(), searchBox: ti.template()):
         """Compute all pair forces, write into atomSystem.f and atomSystem.pe_per_atom.
 
-        Pattern (mirror existing classes in forceFieldClass.py):
+        Pattern (mirror existing classes in forceFieldClass.py — see
+        lennardJones.updateOneF_reciprocal for the reciprocal canonical form):
           - iterate (i, jj) over neighbor list
           - compute r = pos[j] - pos[i]
           - apply MIC (minimum-image convention) for periodic BC
-          - compute |r|, return early if |r| > cutoff
+          - compute |r|, return early if |r|² > cutoffSquare
           - compute force magnitude F_mag and direction r̂
-          - atomSystem.f[i] -= F_mag * r̂
-          - atomSystem.f[j] += F_mag * r̂   (reciprocal — Newton's 3rd law)
-                                            OR break this for non-reciprocal forces
-          - atomSystem.pe_per_atom[i] += 0.5 * U_pair
+
+        FULL-LIST WRITE RULE (critical — easy to get wrong):
+          - The neighbor list under requires_full_list=True visits both
+            (i, j) AND (j, i) for every unordered pair. Each visit writes
+            ONLY to atomSystem.force[i] — never to force[j]. The reverse
+            visit (j, i) handles force[j] when its turn comes.
+          - WRONG (double-counts):  force[i] -= F·r̂ ; force[j] += F·r̂
+          - RIGHT (this kernel):    force[i] -= F·r̂           # only
+
+        FULL-LIST PE COEFFICIENT:
+          - Each unordered pair is visited twice (i,j) + (j,i), so:
+              pe_per_atom[i] += 0.5 * U_pair
+            Sums correctly to 1×U_pair per pair across the campaign.
         """
         N = atomSystem.N[None]
         for i in range(N):

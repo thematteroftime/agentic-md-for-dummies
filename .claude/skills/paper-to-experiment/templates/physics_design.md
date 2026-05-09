@@ -46,7 +46,7 @@ Add as many rows as needed. If observable is **derived** (not directly in paper)
 
 The skill CANNOT ship a strict-validating config until at least Step 5 is merged into the framework — that work is OUT OF SCOPE for the skill itself. Use this checklist to surface what blocks the campaign:
 
-**6-step extension status** (mirrors `references/force_types.md §3`):
+**6-step extension status** (mirrors `references/force_types.md §4`):
 
 | Step | Action | Files touched | Status |
 |------|--------|---------------|--------|

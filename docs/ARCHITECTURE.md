@@ -355,7 +355,7 @@ To add a new paper:    copy templates/adapter_run.py.template
 To add an analyzer:    copy templates/analyzer.py.template
 To add a viz:          copy templates/visualizer.py.template
 To add a force class:  copy templates/force_class.py.template + 6-step process
-                       in references/force_types.md §3
+                       in references/force_types.md §4
 To add a sweep only:   write configs/plan_X.json + python scripts/run_experiment.py
 ```
 

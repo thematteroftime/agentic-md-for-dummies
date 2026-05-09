@@ -66,15 +66,36 @@ DEFAULT_AGGREGATION = {
     "title": "PRX Campaign Report",
 }
 
-EXP_DEFAULTS = {
-    "N": 10000,
-    "stride": 600,
+# Defaults that apply regardless of force_type (administrative bookkeeping).
+EXP_DEFAULTS_COMMON = {
     "chunk_size": 200,
-    "nu": 0.0,
-    "dt": 0.004,
-    "cho": 1,
     "notes": "",
 }
+
+# Per-force-type defaults. The platform merges
+#   EXP_DEFAULTS_COMMON ∪ EXP_DEFAULTS_BY_TYPE[force_type] ∪ user_entry.
+# Adapters set their own physics-correct defaults internally; these are only
+# the values run_experiment.py needs to pass through CLI when the user
+# omits them at the campaign-entry level.
+EXP_DEFAULTS_BY_TYPE = {
+    "hertzian_nonreciprocal": {
+        "N": 10000,
+        "stride": 600,
+        "nu": 0.0,
+        "dt": 0.004,
+        "cho": 1,
+    },
+    "er_plasma": {
+        "N": 1000,
+        "stride": 200,
+        "nu": 0.1,
+        "dt_ms": 0.01,
+        "cho": 2,
+    },
+}
+# Legacy alias kept so callers that import EXP_DEFAULTS continue to work.
+# Resolves to the PRX defaults (most common historic case).
+EXP_DEFAULTS = {**EXP_DEFAULTS_COMMON, **EXP_DEFAULTS_BY_TYPE["hertzian_nonreciprocal"]}
 
 EXP_REQUIRED_PRX = ("tag", "phi", "T0", "steps")
 EXP_REQUIRED_ER  = ("tag", "MT", "steps")
@@ -113,9 +134,12 @@ def _normalize_config(cfg):
     }
 
     for i, exp in enumerate(cfg["campaign"]):
-        merged = {**EXP_DEFAULTS, **exp}
-        # Required fields depend on force_type (PRX = phi+T0, ER plasma = MT)
-        force_type = merged.get("force_type", "hertzian_nonreciprocal")
+        # Resolve defaults by force_type so PRX-shaped values don't silently
+        # rewrite a non-PRX entry's intended timestep / particle count.
+        force_type = exp.get("force_type", "hertzian_nonreciprocal")
+        type_defaults = EXP_DEFAULTS_BY_TYPE.get(force_type, {})
+        merged = {**EXP_DEFAULTS_COMMON, **type_defaults, **exp}
+        # Required fields depend on force_type
         required = (EXP_REQUIRED_ER if force_type == "er_plasma"
                      else EXP_REQUIRED_PRX)
         for key in required:
@@ -252,7 +276,14 @@ def _campaign_preflight(experiments, max_parallel):
 
 
 def stage_smoke(exp, smoke_steps):
-    """Quick verification run (init + first chunk + close + analyze)."""
+    """Quick verification run.
+
+    Smoke proof-of-life (per ARCHITECTURE.md §3.1) is the manifest.json that
+    the adapter writes — NOT the analyzer's report.md. Adapters that follow
+    §3.1 forbidden ("MUST NOT call analyzers in-process") only emit
+    manifest.json + the trajectory; checking for report.md here would
+    penalise correct adapters.
+    """
     smoke_exp = {**exp, "tag": f"{exp['tag']}_smoke", "steps": int(smoke_steps)}
     print(f"[smoke] {smoke_exp['tag']}: {smoke_steps} steps")
     rc = _invoke_md(smoke_exp)
@@ -260,8 +291,8 @@ def stage_smoke(exp, smoke_steps):
         print(f"[smoke] FAILED rc={rc}")
         return None
     rd = _latest_run_dir(smoke_exp["tag"])
-    if rd is None or not (rd / "report.md").exists():
-        print(f"[smoke] no run_dir/report.md produced")
+    if rd is None or not (rd / "manifest.json").exists():
+        print(f"[smoke] no run_dir / manifest.json produced (§3.2 contract)")
         return None
     print(f"[smoke] OK: {rd.name}")
     return rd

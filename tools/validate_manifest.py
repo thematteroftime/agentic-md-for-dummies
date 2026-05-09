@@ -30,7 +30,28 @@ REQUIRED = [
     "steps", "write_stride", "actual_step_rate",
 ]
 # These are recommended but not strictly required (legacy configs may lack them)
-RECOMMENDED = ["dt", "N", "T0", "nu", "notes", "preflight"]
+RECOMMENDED = ["dt", "N", "T0", "nu", "notes", "preflight", "units_regime"]
+
+
+def _known_units() -> set:
+    """Allowed values for the manifest's `units` field — sourced dynamically
+    from the units/ directory so adding units/<new>.yaml auto-extends what
+    the validator accepts (no edits to this file required)."""
+    udir = ROOT / "units"
+    if not udir.is_dir():
+        return {"reduced", "macro"}
+    return {p.stem for p in udir.glob("*.yaml")}
+
+
+def _registered_run_types() -> set:
+    """Parse force_types.md for canonical force_type names. Each registered
+    type is documented under `## N. \`<name>\`` headings."""
+    reg = ROOT / ".claude" / "skills" / "paper-to-experiment" / "references" / "force_types.md"
+    if not reg.exists():
+        return set()
+    import re
+    return set(re.findall(r"^##\s+\d+\.\s+`([a-z_]+)`",
+                            reg.read_text(encoding="utf-8"), re.MULTILINE))
 
 
 def validate_one(manifest_path: Path) -> tuple[list[str], list[str]]:
@@ -75,14 +96,22 @@ def validate_one(manifest_path: Path) -> tuple[list[str], list[str]]:
     if isinstance(ws, (int, float)) and ws < 0:
         errors.append(f"wall_seconds negative: {ws}")
 
-    # units must be 'reduced' or 'macro'
-    if "units" in m and m["units"] not in ("reduced", "macro"):
-        errors.append(f"units='{m['units']}' not in {{reduced, macro}}")
+    # `units` must reference a yaml file under units/. The known set is
+    # discovered at validation time, so adding units/<new>.yaml auto-extends
+    # what the validator accepts — no edits to this file needed.
+    known = _known_units()
+    if "units" in m and m["units"] not in known:
+        errors.append(f"units='{m['units']}' not under units/ "
+                       f"(known yaml files: {sorted(known)})")
 
-    # run_type must be a known force_type (best effort — registry of valid types)
+    # `run_type` validated against the force_types.md registry.
     rt = m.get("run_type")
-    if rt and rt not in ("hertzian_nonreciprocal", "er_plasma", None):
-        warnings.append(f"unknown run_type '{rt}' — register in force_types.md")
+    if rt is not None:
+        registry = _registered_run_types()
+        if registry and rt not in registry:
+            warnings.append(f"unknown run_type '{rt}' — "
+                              f"register in references/force_types.md "
+                              f"(known: {sorted(registry)})")
 
     return errors, warnings
 

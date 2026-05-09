@@ -118,7 +118,39 @@ When adding a new force type, follow §3 below — registry is the gatekeeper, s
 
 ---
 
-## 3. Adding a new force type
+## 3. Engine integration notes (read before adding a new force type)
+
+These platform behaviours are non-obvious and have caught autonomous extension agents. Worth reading once.
+
+### Units handshake (3-way coupling)
+
+Every force_type ties together three labels that MUST match:
+
+1. The `units` keyword in the adapter-emitted `run.in` file (e.g. `units macro`)
+2. The exact filename under `units/<name>.yaml` that constSet loads (e.g. `units/macro.yaml`)
+3. The schema's `units_regime` enum value declared in the force_type's compat block (e.g. `macro_dust`)
+
+Adding a new regime requires creating a new yaml under `units/`, then emitting that yaml's stem in `run.in:units` AND in the manifest's `units` field, while the schema-side `units_regime` is the human-readable enum label that maps to it.
+
+### `ndim=2` requires `Lz ≥ cutoffNegh`
+
+Even though z is force-zeroed every integrator step (`integratorClass.inteBegin`), the underlying searchBox neighbour pass still runs through the 3D MIC kernel. If the lattice file's z-extent is below `cutoffNegh`, `atomSystemClass.addNegh` asserts at startup. **2D adapters must set the lattice's `Lz ≥ cutoffNegh`** (a flat slab is fine — z stays zero throughout integration). Document `cutoffNegh` ≈ 1.3·`cutoff` ≈ 6·λ as a reasonable default, then size Lz accordingly.
+
+### Full-list pattern
+
+`requires_full_list = True` means the neighbour list visits both `(i, j)` AND `(j, i)` for every unordered pair. The kernel must:
+- Write force ONLY to `force[i]` (never to `force[j]`) — the reverse visit handles `j` separately.
+- Accumulate PE as `pe_per_atom[i] += 0.5 * U_pair` (the 0.5 factor compensates for the duplicate visit).
+
+Read `lennardJones.updateOneF_reciprocal` (`forceFieldClass.py:74-93`) for the canonical reciprocal pattern. The template `force_class.py.template` documents this in detail.
+
+### Initial state
+
+`AtomSystem.initData(positions, masses, T0, boxList, groups=...)` calls `scaleVel` internally — velocities are randomized to T0. Tests that need zero initial velocity must call `A.vel.fill(0.0)` AFTER `initData`.
+
+---
+
+## 4. Adding a new force type
 
 When a new paper requires a force class not listed above, walk through these 6 steps in order. **The skill cannot ship a strict-validating config until at least Step 5 is merged**, so flag the entire chain in design doc §2a as a status checklist.
 
@@ -157,7 +189,7 @@ There is a tempting third option to "reuse" vs "extend": pick an existing force 
 
 ---
 
-## 4. Legacy configs (pre-`force_type`)
+## 5. Legacy configs (pre-`force_type`)
 
 Configs written before the `force_type` field was introduced (e.g., `plan_e_damping.json`, several Plan B/C configs) will fail strict validation because their experiments lack `force_type`. They were all `hertzian_nonreciprocal` by default — that was the only force the framework supported at the time.
 
@@ -167,7 +199,7 @@ Skill MUST NOT auto-rewrite legacy configs. If user is migrating, flag it explic
 
 ---
 
-## 5. Cross-reference
+## 6. Cross-reference
 
 - **Schema**: `templates/plan_config.schema.json`
 - **Skill main**: `SKILL.md`
