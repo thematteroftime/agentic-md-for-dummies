@@ -405,6 +405,611 @@ Each step has a template file under `.claude/skills/paper-to-experiment/template
 
 ---
 
+## Human-developer walkthrough — step by step
+
+This section is the human-side counterpart of `.claude/skills/paper-to-experiment/SKILL.md`. It is intentionally detailed: every checkpoint, every file you touch, every command you run is spelled out, and the Kob-Andersen binary LJ reproduction at `configs/plan_pedersen_kalj.json` is the running example. If you have read the AI Skill Workflow above and want to do the same thing yourself, this is the equivalent map.
+
+Three scenarios cover almost every case:
+
+- **Scenario A — paper uses an existing force type and integrator.** Skip to *Reproduction in seven steps*. This is the path for a Lennard-Jones / Hertzian / anisotropic Yukawa / Kob-Andersen LJ paper.
+- **Scenario B — paper introduces a new force class.** Walk *8-step force-class extension* first, then return to the seven-step reproduction.
+- **Scenario C — paper introduces (or requires) a new time-integration scheme.** Walk *9-step integrator extension* first, then return to the seven-step reproduction.
+
+The framework's hard rules (citations mandatory, smoke before production, no silent invention, validator must be green before launch, registry kept in sync, reproduction not done until `report.md` + `fig*.png` exist) apply identically whether AI or you drive — they're enforced by the schema validator, the registry regression tests, and the pipeline phases, not by the agent.
+
+---
+
+### Reproduction in seven steps
+
+#### Step 1 — Place the paper PDF on disk
+
+The framework's contract is "no PDF, no design": every reproduction starts from a real paper that the design document can cite. Drop the file under `papers/`, using the lowercase `<author>_<journal><year>.pdf` convention so the directory stays grep-friendly:
+
+```bash
+cp /path/to/your/paper.pdf papers/pedersen_prl2018.pdf
+ls papers/*.pdf
+```
+
+If the paper is paywalled and you only have an abstract, **stop**. The skill's Hard rule #2 forbids abstract-only reproductions because they have produced wrong physics in the past. Either obtain the PDF (preprint server, arXiv, ResearchGate, library) or pick a different paper. The four candidate PDFs already in `papers/` (Bernard 2011, Engel 2013, Pedersen 2018, Prestipino 2005) are all open-access if you need a starting point — see `papers/CANDIDATES.md`.
+
+**Verify before continuing:** `ls papers/<your_slug>.pdf` shows the file and reports a non-zero size.
+
+#### Step 2 — Audit the registry, decide reuse vs extend
+
+Two artefacts together describe what the framework already knows:
+
+```bash
+# What force_type / integrator / units_regime strings are valid:
+sed -n '1,180p' .claude/skills/paper-to-experiment/references/force_types.md
+
+# The single forwarding station — what classes are wired up:
+cat tools/registry.py
+```
+
+Read the **Conventions table** at the top of `force_types.md` (it lists each registered force_type's `N`-meaning, default IC, ndim, and units_regime in one place). Then read the per-force-type sections (`## 1. hertzian_nonreciprocal`, `## 2. er_plasma`, `## 3. kalj`) and identify whether the paper's potential matches one of them line-by-line — the same Hamiltonian form, the same units, the same ndim.
+
+Three outcomes:
+
+1. **Reuse**: paper's force matches an existing entry exactly → record `force_type=<name>` in your design doc §2 and proceed to Step 3 of this scenario. Most papers in the same physics regime as PRX 2015 / PRL 2008 / PRL 2018 land here.
+2. **Extend**: paper's force is genuinely new → switch to *8-step force-class extension* below, then return.
+3. **Degenerate reuse** (e.g. picking `ERPotential` and setting `MT=0` to get an isotropic Yukawa): **forbidden** for thesis-quality work. The manifest will lie about which physics ran and downstream analyzers can misinterpret it. If you're tempted to take this shortcut, declare it in design doc §10b as `ASK USER:` first.
+
+Same exercise for the integrator: read the *Integrator selection* table in `force_types.md §4`. If the paper's central observable is diffusion / viscosity / glass dynamics, the default `baoab_drag` will plateau the MSD (no Wiener noise) and you should plan to either pick `baoab_langevin` or extend further. Structural-only or NVE runs are fine on `baoab_drag`.
+
+**Verify**: write down on paper one line per choice: `force_type = <name>`, `integrator = <name>`, `units_regime = <name>`, `ndim = 2 or 3`. If any line says "needs new class", flip to the corresponding extension section now.
+
+#### Step 3 — Write the design document
+
+Copy the template, name the new file by date and topic, and fill it section by section:
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/physics_design.md \
+   docs/specs/$(date +%Y-%m-%d)-<your_topic>-design.md
+```
+
+Replace **every** `<...>` placeholder. Sections that genuinely do not apply get `N/A — <reason>` rather than deletion, so a future reviewer sees you considered them. The §0 Open-questions early checklist is the one you fill **before** the rest — if any line says `no` or counts ≥ 1, stop and resolve before writing the body of the design.
+
+§1 (observables) is the spine of the document. Each row cites a paper Eq. or Fig. number and states a quantitative target with tolerance. Derived observables (not directly in the paper) get a `*` and an explanation in §11. The KA-LJ design at `.claude/skills/paper-to-experiment/references/examples/worked_example_PRL2018_KALJ.md` is a complete worked reference; copy its §1 table shape for your paper.
+
+§2 (force field) cites the registry — paste the entry's required fields verbatim from `force_types.md`. If you're in Scenario B, fill §2a (the 8-step extension status table) and **stop** here for self-greenlight before walking the extension.
+
+§3 (simulation setup) covers `N`, `box`, `dt`, `T0`, `density`, `boundary_conditions`, `thermostat`, `integrator`, `initial_state`, `equilibration_steps`, `write_stride`, `chunk_size`, `cho`, `steps_per_run`, `t_total`. The `initial_state` field defaults to `square_2d` for ndim=2 or `simple_cubic_3d` for ndim=3; override only when the paper specifies otherwise. For long-range repulsive forces (Coulomb / Yukawa / hard-core surrogate), random IC is **forbidden** by the *Long-range repulsive IC caveat* in `force_types.md §4`.
+
+§4 (sweep dimensions) caps total runs at 12 by default. If you genuinely need more, split into Plan A / Plan B and emit two configs. Each sweep value cites a paper passage motivating it.
+
+§6 (pass criteria) translates each §1 observable into a numeric PASS/NEAR/FAIL rule. The KA-LJ design's §6 is a clean reference.
+
+§7 (expected costs) estimates per-run wall, RAM peak, VRAM peak, disk per run, and total campaign cost. Hard ceilings: 24 hr per run, 8 GB VRAM, 50 GB disk.
+
+§10 splits decisions into two sub-lists. §10a Auto-decisions are defaults you adopted from the registry / examples without asking — explain the rationale. §10b Open questions are items only the reader can resolve, prefixed with `ASK USER:`. **§10b empty is the gate to Step 4**; non-empty means you have unresolved questions and you stop.
+
+**Verify**: open the design doc and grep for `<` characters in any non-code line (`grep -n '<' docs/specs/<your_design>.md | grep -v '\`' `) — every literal `<...>` placeholder is unfilled and a bug.
+
+#### Step 4 — Self-review the design
+
+The §0 Open-questions early checklist already gated Step 3; this step gates Step 5. Walk it again with fresh eyes:
+
+- Is the paper PDF on disk where §0 says? (`ls papers/<slug>.pdf`)
+- Does every §1 observable cite a paper Eq./Fig. or carry the `*` mark for derived?
+- Is §2's `force_type` actually in `tools/registry.py:_REGISTRY` and `forces/__init__.py:FORCE_REGISTRY`?
+- Does §3 `initial_state` exist in `tools/lattices/__init__.py:LATTICE_REGISTRY` (one of `square_2d`, `triangular_2d`, `octagonal_2d`, `simple_cubic_3d`, or a paper-mandated extension)?
+- Is §4 total-runs ≤ 12, or did you split into Plan A/B?
+- Does §7 cost estimate fit under the hard ceilings?
+- Is §10b empty or list-form? If items remain, resolve before continuing.
+
+Any "no" sends you back to Step 3 to fix.
+
+#### Step 5 — Emit `configs/plan_<topic>.json`
+
+The campaign config is the data-only translation of the design document. It carries the metadata, the per-run parameters from §4 cross-product, the pipeline phases, and the registry-class names that drive Phase 3.4 ANALYZE / Phase 3.5 VISUALIZE / Phase 4 AGGREGATE.
+
+The minimal required fields (from `templates/plan_config.schema.json`):
+
+```json
+{
+  "_comment": "<one paragraph synthesising §0 + §1 from the design doc>",
+  "_paper_ref": "<from §0 citation>",
+  "_paper_pdf": "papers/<slug>.pdf",
+  "_design_doc": "docs/specs/YYYY-MM-DD-<topic>-design.md",
+  "_force_type_doc": "references/force_types.md §N",
+  "_units_doc": "<reduced_lj | macro_dust | reduced_yukawa>",
+  "campaign": [
+    {
+      "force_type": "<name>",
+      "tag": "<unique_run_id>",
+      "ndim": 3,
+      "units_regime": "reduced_lj",
+      "integrator": "baoab_drag",
+      "<force-required-fields>": "<from force_types.md>",
+      "steps": 100000,
+      "stride": 200,
+      "notes": "<one-line rationale linked to design doc §>"
+    }
+  ],
+  "pipeline": {
+    "preflight": true,
+    "smoke": true,
+    "smoke_steps": 100,
+    "production": true,
+    "analyze": true,
+    "analyzer_class": "<Paper>Analyzer",
+    "halt_on_fail": true,
+    "max_parallel": 1,
+    "visualize": {"enabled": true, "class": "<Paper>Plotter"}
+  },
+  "aggregation": {
+    "enabled": true,
+    "class": "<Paper>Aggregator",
+    "output": "docs/<paper>_campaign_report.md",
+    "plots": ["overview"]
+  }
+}
+```
+
+For a full real example with three state points, the FD-balanced thermostat, and proper aggregator wiring, copy `configs/plan_pedersen_kalj.json` and adapt — that file is the canonical Scenario A + integrator-override example. For a single-temperature smoke launch suitable for a 30-second sanity check, `configs/examples/plan_pedersen_kalj_smoke.json` is the minimal version of the same campaign.
+
+The classes referenced from `pipeline.analyzer_class`, `pipeline.visualize.class`, and `aggregation.class` MUST already exist in `tools/registry.py:_REGISTRY`. If they don't (Scenario B's analyzer / plotter / aggregator), you go back to the 8-step extension and finish those steps before this config validates.
+
+#### Step 6 — Validate with `--strict`
+
+Every config goes through three pre-launch gates before any GPU time is spent:
+
+```bash
+python scripts/validate_config.py configs/plan_<your_topic>.json --strict
+```
+
+Exit codes:
+- `0` — schema, physics rules, and budget all pass. Proceed to Step 7.
+- `1` — schema or physics validation failed. Read the `ERR` lines, fix the JSON, re-run.
+- `2` — warnings only (non-strict pass; strict fail). Read the `warn` lines and decide: either fix the config, or document the override in `_comment` and re-run without `--strict` if you're conscious about the trade-off.
+
+The validator also prints a cost estimate (per-run wall, total VRAM, disk). Cross-check it against design doc §7. If the two diverge by more than 2×, the validator's step-rate model is stale relative to your hardware — file an issue and trust the more recent of the two.
+
+If validation passes, re-run **without** `--strict` to see the warnings the strict mode would have hidden — they're all things to fix in a follow-up if the campaign succeeds.
+
+#### Step 7 — Launch
+
+The framework has one entry point:
+
+```bash
+python scripts/run_experiment.py configs/plan_<your_topic>.json
+```
+
+The pipeline runs the phases in order: **preflight → smoke → production → analyze (3.4) → visualize (3.5) → aggregate**. Smoke catches crashes in 100-step bursts; if any smoke fails and `halt_on_fail=true`, the production phase never starts. Each completed production run lands in `outputFiles/<TS>_<tag>/` with `manifest.json` + `<base>_<step>.h5` + `run.in` + `lattice.xyz`. Phase 3.4 then writes `report.md` per dir, Phase 3.5 writes `figN_*.png` per dir, and Phase 4 writes `docs/<paper>_campaign_report.md` + `docs/images/<paper>_*.png` for the cross-run summary.
+
+**Reproduction is not done until you can see the answer.** Each production run dir must contain at least:
+
+```
+outputFiles/<TS>_<tag>/
+├── manifest.json     ← engine wired up correctly
+├── report.md         ← analyzer ran (Phase 3.4)
+└── fig*.png          ← plotter ran (Phase 3.5)
+```
+
+If a run dir is missing `report.md` or `fig*.png`, the analyzer / plotter wasn't registered correctly — go back to the 8-step extension Step 7 / Step 8 and fix.
+
+You decide when to spend GPU time. The framework never auto-launches production from the design step.
+
+---
+
+### 8-step force-class extension
+
+Use this when Step 2 told you the paper's potential is genuinely not in the existing `forces/` package. The reference walkthrough is the Kob-Andersen extension that landed in commits `0f0593a` → `b6169c4` → `32f15bb`; every file mentioned below has a real instance in main.
+
+#### Step 1 — Implement the force class
+
+Copy the template and save under `forces/`:
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/force_class.py.template \
+   forces/<your_force>.py
+```
+
+Subclass `forceField` from `forces.base`, declare two class-level attributes (`requires_full_list` and `PREFLIGHT_FIELDS`), and implement either `updateOneF_reciprocal` or `updateOneF_nonreciprocal`. The KA-LJ reference at `forces/kalj.py` is the cleanest extension reference because it covers the per-pair (σ, ε) selection a binary mixture requires; `forces/lennard_jones.py` is the simplest single-species reference.
+
+The pattern looks like:
+
+```python
+# forces/<your_force>.py
+from constSet import *
+from forces.base import forceField
+
+
+@ti.data_oriented
+class <YourForce>(forceField):
+    requires_full_list = True              # full neighbour list visits both (i,j) and (j,i)
+    PREFLIGHT_FIELDS = ("<paper-specific kwargs>",)
+
+    def __init__(self, <paper params>):
+        ...
+        self.reciprocal = True             # most forces; non-reciprocal sets False
+
+    @ti.func
+    def updateOneF_reciprocal(self, i: ti.i32, j: ti.i32):
+        rij = self.searchBox.applyMic(self.atomSystem.pos[j] - self.atomSystem.pos[i])
+        r = rij.norm()
+        if r * r <= self.cutoffSquare:
+            f_mag = ...                                    # -dV/dr at r
+            self.atomSystem.force[i] += -f_mag * (rij / r)
+            U_pair = ...                                    # the full pair potential at r
+            self.atomSystem.pe_per_atom[i] += 0.5 * U_pair  # 0.5 because full-list visits each pair twice
+```
+
+Register the new class in **two** registries — one local to the package, one global:
+
+```python
+# forces/__init__.py — local registry; consulted by direct imports
+from forces.<your_force> import <YourForce>
+
+FORCE_REGISTRY: dict[str, type] = {
+    # ... existing entries kept verbatim ...
+    "<your_force_type>": <YourForce>,
+}
+
+__all__ = [..., "<YourForce>", "FORCE_REGISTRY"]
+```
+
+```python
+# tools/registry.py — single forwarding station; consulted by config dispatch
+_REGISTRY: dict[str, str] = {
+    # ... existing entries kept verbatim ...
+    "<YourForce>": "forces.<your_force>:<YourForce>",
+}
+```
+
+Both registries are kept in sync by the regression test `tests/test_skill_regression.py:test_registry_local_init_sync`. If only one side is updated, that test will fail loudly the next time `pytest -q` runs.
+
+**Verify**: `python -c "from forces import <YourForce>, FORCE_REGISTRY; print(FORCE_REGISTRY)"` lists your new entry.
+
+#### Step 2 — Write tests
+
+Pair tests check force magnitude against an analytic 2-particle calculation, force symmetry (or antisymmetry for non-reciprocal forces), and cutoff boundary behaviour.
+
+```bash
+cp tests/test_kalj_3cases.py tests/test_<your_class>_<N>cases.py
+# adapt the analytic targets to your potential
+```
+
+Run until green:
+
+```bash
+pytest tests/test_<your_class>_*.py -x -v
+```
+
+Tests are mandatory before any production run; this is what catches a sign error in `f_mag` or a missing `0.5 *` in the PE accumulator before it pollutes hours of GPU time.
+
+#### Step 3 — Adapter (per-paper run script)
+
+The adapter is a project-root script that wraps your force class behind the platform's CLI contract. Copy the template:
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/adapter_run.py.template <topic>_run.py
+```
+
+And adapt by mirroring `pedersen_kalj_run.py`. The structure is:
+
+1. `PARAMS` dict at the top: paper defaults including `force_type`, `integrator`, lattice choice, paper-specific kwargs.
+2. `_prepare_lattice(p, suffix)`: build initial positions via `tools.lattices.LATTICE_REGISTRY[p["initial_state"]]` and write the lattice file to `dataFiles/`.
+3. `_write_run_in(p, suffix)`: write the `run.in` text file under `dataFiles/` capturing the runtime parameters.
+4. `main()`: parse CLI flags, build `systemRun(...)`, call `runWithData()`, write `manifest.json` to the run dir.
+
+The adapter MUST NOT call analyzers, plotters, or visualizers in-process — that's `docs/ARCHITECTURE.md §3.1` *FORBIDDEN*. Phase 3.4/3.5/4 of the pipeline dispatch them by name from the registry.
+
+**Verify** with a CLI smoke run, bypassing the pipeline:
+
+```bash
+python <topic>_run.py --tag smoke --steps 100 --N 200 --T0 1.0
+ls outputFiles/<TS>_smoke/
+# expect: manifest.json + .h5 + run.in + lattice.xyz
+```
+
+#### Step 4 — Dispatch wiring + validator branch
+
+`scripts/run_experiment.py` needs to know how to launch your adapter:
+
+```python
+# scripts/run_experiment.py
+MD_SCRIPT_<TOPIC> = _ROOT / "<topic>_run.py"        # add near the existing MD_SCRIPT_* lines
+
+EXP_DEFAULTS_BY_TYPE = {
+    # ... existing entries ...
+    "<your_force_type>": {                          # add your defaults
+        "N": 1000, "stride": 200, "nu": 0.1,
+        # ... other defaults ...
+    },
+}
+
+EXP_REQUIRED_<TYPE> = ("tag", "<paper-required-1>", "<paper-required-2>", "steps")
+
+# In _normalize_config:
+if force_type == "<your_force_type>":
+    required = EXP_REQUIRED_<TYPE>
+
+# In _invoke_md:
+elif force_type == "<your_force_type>":
+    cmd = [PYTHON, str(MD_SCRIPT_<TOPIC>),
+           "--tag", str(exp["tag"]),
+           # ... map exp dict keys to CLI flags ...]
+```
+
+`scripts/validate_config.py:check_force_type_specific` needs a parallel branch:
+
+```python
+elif ft == "<your_force_type>":
+    # paper-specific physics warnings (sub-critical damping, lattice mismatch, ...)
+    ...
+```
+
+Forgetting the validator branch causes a silent `else: res.err("unknown force_type")` and your config never validates.
+
+**Verify**: a dummy config with `"force_type": "<your_force_type>"` passes `validate_config.py` without complaining about unknown force_type.
+
+#### Step 5 — Schema enum + conditional
+
+`templates/plan_config.schema.json` is the single source of truth for what configs the framework accepts:
+
+```json
+{
+  "properties": {
+    "force_type": {
+      "enum": ["hertzian_nonreciprocal", "er_plasma", "kalj", "<your_force_type>"]
+    }
+  },
+  "allOf": [
+    {
+      "if":   { "properties": { "force_type": { "const": "<your_force_type>" } } },
+      "then": {
+        "required": ["<paper-required-fields>"],
+        "properties": {
+          "ndim":         { "const": 3 },
+          "units_regime": { "const": "reduced_lj" }
+        }
+      }
+    }
+  ]
+}
+```
+
+If your paper introduces a brand-new units regime (a new yaml file under `units/`), also extend the top-level `units_regime` enum here.
+
+**Verify**: `python scripts/validate_config.py configs/<your_test>.json --strict` returns exit 0.
+
+#### Step 6 — Document in the registry
+
+`references/force_types.md` is the human-readable counterpart of the schema enum. Add a new section (the outer fence below uses four backticks so the nested `json` block inside renders cleanly):
+
+````markdown
+## N. `<your_force_type>`  (<Paper Citation>)
+
+- **paper**: <citation>
+- **entry script**: `<topic>_run.py`
+- **force class**: `forces.<your_force>:<YourForce>`
+- **analyzer**: `tools.analyzers.<paper>:<Paper>Analyzer`
+- **plotter**: `tools.plotters.<paper>:<Paper>Plotter`
+- **aggregator**: `tools.aggregators.<paper>:<Paper>Aggregator`
+- **compat**: `ndim=<2|3>`, `units_regime=<reduced_lj|...>`
+- **integrator**: <baoab_drag | baoab_langevin | ...>
+- **IC**: <initial_state choice + species labelling rules>
+
+### Required fields per experiment
+| field | type | range | meaning |
+|-------|------|-------|---------|
+| ... |
+
+### Optional fields
+| field | type | default | meaning |
+|-------|------|---------|---------|
+| ... |
+
+### Critical pre-flight rules
+- ...
+
+### Example
+```json
+{ ... canonical config block ... }
+```
+````
+
+Also add a row to the **Conventions table** at the top of `force_types.md` with your N-meaning and default-IC choices.
+
+#### Step 7 — Analyzer
+
+Per-run analysis class that reads the trajectory and writes `report.md` plus optional `*.npz` files for the plotter:
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/analyzer.py.template \
+   tools/analyzers/<paper>.py
+```
+
+Rename the template's `MyAnalyzer` to `<Paper>Analyzer`, implement `full_analysis(run_dir, **params) -> dict`, and have the method write `<run_dir>/report.md` as a side effect. The full contract is documented in `templates/physics_design.md §1.5` and the worked KA-LJ analyzer at `tools/analyzers/pedersen.py` is the cleanest reference.
+
+Register in **two** places again:
+
+```python
+# tools/analyzers/__init__.py
+from tools.analyzers.<paper> import <Paper>Analyzer
+__all__ = [..., "<Paper>Analyzer"]
+
+# tools/registry.py:_REGISTRY
+"<Paper>Analyzer": "tools.analyzers.<paper>:<Paper>Analyzer",
+```
+
+In your campaign config, set `pipeline.analyze=true` AND `pipeline.analyzer_class="<Paper>Analyzer"` — Phase 3.4 only fires when both are present.
+
+**Verify**: re-run a single production from Step 4's verify and check the run dir now contains `report.md`.
+
+#### Step 8 — Plotter and aggregator
+
+Per-run figures and cross-run report:
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/plotter.py.template \
+   tools/plotters/<paper>.py
+cp .claude/skills/paper-to-experiment/templates/aggregator.py.template \
+   tools/aggregators/<paper>.py
+```
+
+`<Paper>Plotter.render(run_dir, **params)` writes ≥1 `<run_dir>/figN_*.png` per run dir; `<Paper>Aggregator.aggregate(run_dirs, output, plots, title, **params)` writes the master `docs/<paper>_campaign_report.md` and renders cross-run figures by calling the plotter's optional `fig_<name>` static methods.
+
+Register both in `tools/registry.py:_REGISTRY` AND mirror in `tools/plotters/__init__.py` and `tools/aggregators/__init__.py`.
+
+In your campaign config, set `pipeline.visualize.enabled=true`, `pipeline.visualize.class="<Paper>Plotter"`, `aggregation.enabled=true`, `aggregation.class="<Paper>Aggregator"`.
+
+**Verify (and the final gate of the 8-step extension)**: re-run one full pipeline launch; every production run dir now contains `manifest.json + report.md + fig*.png`, and `docs/<paper>_campaign_report.md` plus the cross-run images exist. This satisfies SKILL Hard rule #9 and the extension is complete. You can now go back to the seven-step reproduction starting from Step 5.
+
+---
+
+### 9-step integrator extension
+
+Use this when the paper's central observable is diffusion / viscosity / glass dynamics or any other transport / fluctuation quantity that a fluctuation-dissipation-balanced thermostat is required to reproduce. The default `baoab_drag` is drag-only Langevin — the noise term is missing, so MSD plateaus and `T_meas` drifts. The `BAOABLangevin` extension that landed in commit `f65f5d3` is the canonical worked example; every file below has a real instance in main.
+
+#### Step 1 — Implement the integrator class
+
+Copy the template and save under `integrators/`:
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/integrator.py.template \
+   integrators/<your_scheme>.py
+```
+
+Subclass `IntegratorBase` from `integrators.base` and declare three class-level attributes:
+
+```python
+# integrators/<your_scheme>.py
+import math
+from constSet import *
+import constSet as cs
+from integrators.base import IntegratorBase
+
+
+@ti.data_oriented
+class <YourScheme>(IntegratorBase):
+    REQUIRED_KWARGS = ("timeStep", "<paper-required>")
+    OPTIONAL_KWARGS = ("nu",)
+    SCHEME_NAME = "<your_scheme>"
+
+    def __init__(self, timeStep, <paper-required>, nu=0.0):
+        self.delta_t = float(timeStep)
+        self.delta_tHalf = self.delta_t / 2.0
+        # ... cache scheme-specific constants ...
+
+    @ti.kernel
+    def step_<...>_<...>(self):
+        ...
+
+    def inteBegin(self):
+        # one full step of your splitting; mind atomSystem.zeroZ at the end if ndim=2
+        ...
+```
+
+The `BAOABLangevin` reference at `integrators/baoab_langevin.py` is short (~60 lines) and shows the FD-balanced Wiener-noise pattern, including the `(1 − α²)·k_B·T_target/m` prefactor and the `ti.randn()` recipe inside the `@ti.kernel`. Copy its skeleton when extending into another stochastic scheme.
+
+#### Step 2 — Tests
+
+The minimum test set:
+
+- **NVE invariance at ν=0**: with the noise term off, the scheme reduces to Velocity Verlet and energy drift over a long run is bounded.
+- **Thermostat target hit**: from a non-equilibrium IC, `T_meas` converges to `T_target` within a tolerance (default 5 %; a small margin is acceptable when the test does not pin the Taichi RNG seed).
+- **Wiener-noise reproducibility**: under fixed `cs.reconfigure(random_seed=S)`, two runs produce identical trajectories.
+
+`tests/test_baoab_langevin_3cases.py` is the canonical reference.
+
+#### Step 3 — Local registry
+
+```python
+# integrators/__init__.py
+from integrators.<your_scheme> import <YourScheme>
+
+INTEGRATOR_REGISTRY: dict[str, type] = {
+    "baoab_drag":     BAOABDrag,
+    "baoab_langevin": BAOABLangevin,
+    "<your_scheme>":  <YourScheme>,
+}
+
+__all__ = [..., "<YourScheme>"]
+```
+
+#### Step 4 — Forwarding station
+
+```python
+# tools/registry.py:_REGISTRY
+"<YourScheme>": "integrators.<your_scheme>:<YourScheme>",
+```
+
+#### Step 5 — Schema enum + conditional
+
+```json
+{
+  "properties": {
+    "integrator": {
+      "enum": ["baoab_drag", "baoab_langevin", "<your_scheme>"]
+    }
+  },
+  "allOf": [
+    {
+      "if":   { "properties": { "integrator": { "const": "<your_scheme>" } }, "required": ["integrator"] },
+      "then": { "required": ["<scheme-required-fields>"] }
+    }
+  ]
+}
+```
+
+The `"required": ["integrator"]` clause inside the `if` is mandatory — without it the conditional matches every campaign entry that simply omits `integrator` and silently constrains entries the author never intended.
+
+#### Step 6 — Validator stability rule
+
+`scripts/validate_config.py:check_integrator_specific` is the dedicated hook called from `main()` alongside `check_force_type_specific`:
+
+```python
+def check_integrator_specific(cfg, res: Result):
+    for exp in cfg.get("campaign", []):
+        scheme = exp.get("integrator", "baoab_drag")
+        tag = exp.get("tag", "<no-tag>")
+
+        if scheme == "<your_scheme>":
+            # paper-specific stability rules, e.g. dt × nu < 0.1
+            ...
+```
+
+This is how `dt × ν < 0.1` is enforced for `baoab_langevin` today. Add a new branch for your scheme.
+
+#### Step 7 — Adapter wiring
+
+Each adapter that wants to use the new integrator dispatches by name:
+
+```python
+# in your <topic>_run.py main()
+integrator_name = p.get("integrator", DEFAULT_INTEGRATOR)
+integrator_cls = INTEGRATOR_REGISTRY[integrator_name]
+inte_kwargs = {"timeStep": p["dt"], "nu": p["nu"]}
+if "<paper-required>" in integrator_cls.REQUIRED_KWARGS:
+    inte_kwargs["<paper-required>"] = p["<paper-required>"]
+
+system = systemRun(..., integrator=integrator_cls, ..., inteParams=inte_kwargs)
+```
+
+`pedersen_kalj_run.py` lines 175–195 are the cleanest reference for this dispatch pattern.
+
+#### Step 8 — Registry doc table row
+
+Add a row to the *Integrator selection* table in `references/force_types.md §4`:
+
+| `integrator` | Scheme | Use when | Caveats |
+|--------------|--------|----------|---------|
+| `<your_scheme>` | <one-line description> | <observable that requires it> | <stability / scope notes> |
+
+If your scheme requires extra config fields beyond `nu` and `T_target`, also add a per-force-type example block under §3 / §5b that shows the canonical config form.
+
+#### Step 9 — Regression test for sync
+
+The `test_integrator_schema_enum_synced_with_registry` test in `tests/test_skill_regression.py` already asserts that every `INTEGRATOR_REGISTRY` key appears in the schema's `integrator` enum and vice versa. Adding your scheme to both registries (Step 3 + Step 4) and to the schema (Step 5) means the test passes automatically. If you add a scheme but skip the schema enum, this test fails the next `pytest -q`. Consider also adding a sibling test that asserts your new integrator is present in `tools/registry.py:_REGISTRY`, mirroring `test_registry_local_init_sync`.
+
+**Verify (and the final gate of the 9-step extension)**: `pytest -q` reports the same baseline pass count plus your new tests, and a campaign config using `"integrator": "<your_scheme>"` validates with `--strict` exit 0.
+
+You can now return to the seven-step reproduction starting from Step 3 (or Step 5 if the design doc was already written).
+
+---
+
 ## Adding your own paper
 
 The fastest case is when the paper reuses a force type that the framework already ships. Pick a starter that is closest to your physics — `configs/examples/plan_g_er_chains.json` for an anisotropic-Yukawa-flavoured paper, or `configs/examples/plan_pedersen_kalj_smoke.json` for a binary-mixture or diffusion-sensitive paper that needs the FD-balanced thermostat — then iterate locally:

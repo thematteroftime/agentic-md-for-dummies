@@ -406,6 +406,611 @@ Skill 会带你走 `force_types.md §4` 文档化的八步扩展流程：
 
 ---
 
+## 人类开发者保姆教程 —— 逐步走完
+
+这一节是 `.claude/skills/paper-to-experiment/SKILL.md` 的人类版镜像。**刻意写得很详细**：每个 checkpoint、每个动到的文件、每条要敲的命令都明列；`configs/plan_pedersen_kalj.json` 这一份 Kob-Andersen 二元 LJ 复现是贯穿全程的范例。如果你已经读过上面的 *AI Skill 工作流* 一节并想自己做同一件事，本节就是同等详细的人类版地图。
+
+三种场景覆盖几乎所有情况：
+
+- **场景 A —— 论文使用框架已有的 force_type 和积分器**。直接跳到 *七步复现流程*。LJ / Hertzian / 各向异性 Yukawa / Kob-Andersen LJ 系列论文都在这条路。
+- **场景 B —— 论文要新加一个力类**。先走 *八步力类扩展*，再回到七步复现。
+- **场景 C —— 论文要新加（或必须用）一种时间积分方案**。先走 *九步积分器扩展*，再回到七步复现。
+
+框架的硬规则（必须引用论文 / production 前必 smoke / 不许凭空猜参数 / 校验器先 green / registry 两边对齐 / 没产出 `report.md` + `fig*.png` 就算没复现完）AI 和人类一视同仁——这些规则由 schema 校验器、registry 回归测试、pipeline 阶段强制执行，不依赖任何 agent。
+
+---
+
+### 七步复现流程
+
+#### 第 1 步 —— 把论文 PDF 放到磁盘上
+
+框架的契约是"没 PDF 不写 design"：每次复现都从一份可被 design 文档引用的真实论文开始。把文件放到 `papers/` 下，按 `<author>_<journal><year>.pdf` 小写下划线规范命名，目录始终好 grep：
+
+```bash
+cp /path/to/your/paper.pdf papers/pedersen_prl2018.pdf
+ls papers/*.pdf
+```
+
+如果论文付费墙拦着、你只有摘要，**停下**。Skill 的 Hard rule #2 禁止仅凭摘要复现，因为历史上这种做法产出过错误物理。要么拿到 PDF（preprint server / arXiv / ResearchGate / 学校订阅），要么换论文。`papers/` 下已有 4 篇候选 PDF（Bernard 2011、Engel 2013、Pedersen 2018、Prestipino 2005）都开源——见 `papers/CANDIDATES.md`。
+
+**继续前的验证**：`ls papers/<your_slug>.pdf` 显示你的文件且大小非零。
+
+#### 第 2 步 —— 审 registry，决定复用还是扩展
+
+两份产物合起来描述了"框架已经知道的事"：
+
+```bash
+# 哪些 force_type / integrator / units_regime 字符串合法：
+sed -n '1,180p' .claude/skills/paper-to-experiment/references/force_types.md
+
+# 单一转发站 —— 哪些类被接进来了：
+cat tools/registry.py
+```
+
+先读 `force_types.md` 顶部的 **Conventions table**（一张表里列出每个 force_type 的 N 含义、默认 IC、ndim、units_regime）；再读各 force_type 节（`## 1. hertzian_nonreciprocal`、`## 2. er_plasma`、`## 3. kalj`），逐行判断论文的势能是否和某一项严格匹配——同样的 Hamiltonian、同样的单位、同样的 ndim。
+
+三种结果：
+
+1. **复用**：论文力和某条已有项严格匹配 → design 文档 §2 写 `force_type=<name>`，跳到本场景的第 3 步。多数和 PRX 2015 / PRL 2008 / PRL 2018 同物理范畴的论文都属于这一类。
+2. **扩展**：论文力确实是新的 → 切到下面的 *八步力类扩展*，做完再回。
+3. **退化复用**（例如挑 `ERPotential` 然后令 `MT=0` 当各向同性 Yukawa 用）：thesis 级工作**禁止**这么做。manifest 会撒谎说跑的是 `ERPotential`，下游分析器可能误读。如果你被这条捷径诱惑到，至少在 design §10b 用 `ASK USER:` 标出来。
+
+积分器同样过一遍：读 `force_types.md §4` 的 *Integrator selection* 表。如果论文核心观测量是扩散 / 黏度 / 玻璃动力学，默认的 `baoab_drag` 会把 MSD 卡在平台（缺 Wiener noise），你应该计划用 `baoab_langevin` 或者再扩展一种。结构分析或 NVE 跑用 `baoab_drag` 没问题。
+
+**验证**：在纸上写四行 —— `force_type = <name>`、`integrator = <name>`、`units_regime = <name>`、`ndim = 2 或 3`。任一行写"需新类"就立刻翻到对应的扩展节。
+
+#### 第 3 步 —— 写 design 文档
+
+复制模板，按日期 + 主题命名新文件，逐节填：
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/physics_design.md \
+   docs/specs/$(date +%Y-%m-%d)-<your_topic>-design.md
+```
+
+把**每一处** `<...>` 占位符都替换掉。真的不适用的小节写 `N/A —— <理由>`，不要删——好让后来人看到你考虑过。§0 的 *Open-questions early checklist* 在写正文**之前**就要填——任何一行勾"no"或计数 ≥ 1，就停下解决再继续。
+
+§1（观测量）是文档的脊梁。每行引用论文 Eq. 或 Fig. 编号，给定量化目标和容差。论文里没有但你推导出的衍生量打 `*` 号并在 §11 解释。`.claude/skills/paper-to-experiment/references/examples/worked_example_PRL2018_KALJ.md` 是 KA-LJ 完整 design 范例；你可以照抄它的 §1 表格形状。
+
+§2（力场）从 registry 复制——直接把 `force_types.md` 对应条目的 required fields 抄过来。如果你在场景 B，把 §2a（八步扩展状态表）填完，然后**停**在这里给自己 greenlight 后再走扩展。
+
+§3（仿真设置）覆盖 `N`、`box`、`dt`、`T0`、`density`、`boundary_conditions`、`thermostat`、`integrator`、`initial_state`、`equilibration_steps`、`write_stride`、`chunk_size`、`cho`、`steps_per_run`、`t_total`。`initial_state` 默认 ndim=2 用 `square_2d`，ndim=3 用 `simple_cubic_3d`；只在论文明示时覆盖。长程斥力（库仑 / Yukawa / 硬核近似）随机 IC 被 `force_types.md §4` 的 *Long-range repulsive IC caveat* **禁止**。
+
+§4（扫描维度）默认上限 12 runs。真要更多就拆 Plan A / Plan B 并出两份配置。每个扫描值都要引用一段论文动机。
+
+§6（pass criteria）把 §1 每条观测量翻译成 PASS / NEAR / FAIL 数值规则。KA-LJ design 的 §6 是干净参照。
+
+§7（成本估计）估每 run 墙钟、RAM peak、VRAM peak、每 run 磁盘、campaign 总成本。硬上限：每 run 24 小时、VRAM 8 GB、磁盘 50 GB。
+
+§10 把决策分两子表。§10a Auto-decisions 是你从 registry / examples 自定的默认——写明理由。§10b Open questions 是只有读者能定的事，前缀 `ASK USER:`。**§10b 为空才是进第 4 步的门**；非空意味着你有未解决问题，停。
+
+**验证**：打开 design 文档，grep 任何不在代码块里的 `<` 字符（``grep -n '<' docs/specs/<your_design>.md | grep -v '\`' ``）——每个残留的字面 `<...>` 占位符都是 bug。
+
+#### 第 4 步 —— 自审 design
+
+§0 的 early checklist 已经守过第 3 步入口；这一步守第 5 步入口。换一双新眼睛再走一遍：
+
+- 论文 PDF 在 §0 写的位置吗？（`ls papers/<slug>.pdf`）
+- §1 每条观测量都引用了 paper Eq./Fig.，或者带 `*` 号说明是衍生？
+- §2 的 `force_type` 真的在 `tools/registry.py:_REGISTRY` 和 `forces/__init__.py:FORCE_REGISTRY` 里？
+- §3 的 `initial_state` 在 `tools/lattices/__init__.py:LATTICE_REGISTRY` 里（`square_2d`、`triangular_2d`、`octagonal_2d`、`simple_cubic_3d` 之一，或论文要求的扩展）？
+- §4 总 runs ≤ 12，或者你已经拆成 Plan A/B？
+- §7 成本估计落在硬上限以内？
+- §10b 为空或全部列出？还有未解项就回去解决再继续。
+
+任一"no"把你打回第 3 步。
+
+#### 第 5 步 —— 生成 `configs/plan_<topic>.json`
+
+campaign 配置是 design 文档的纯数据翻译。它带元数据、§4 cross-product 出来的每 run 参数、pipeline 阶段、以及驱动 Phase 3.4 ANALYZE / Phase 3.5 VISUALIZE / Phase 4 AGGREGATE 的注册类名。
+
+最小必要字段（来自 `templates/plan_config.schema.json`）：
+
+```json
+{
+  "_comment": "<合成自 design §0 + §1 的一段>",
+  "_paper_ref": "<§0 引用>",
+  "_paper_pdf": "papers/<slug>.pdf",
+  "_design_doc": "docs/specs/YYYY-MM-DD-<topic>-design.md",
+  "_force_type_doc": "references/force_types.md §N",
+  "_units_doc": "<reduced_lj | macro_dust | reduced_yukawa>",
+  "campaign": [
+    {
+      "force_type": "<name>",
+      "tag": "<unique_run_id>",
+      "ndim": 3,
+      "units_regime": "reduced_lj",
+      "integrator": "baoab_drag",
+      "<force-required-fields>": "<from force_types.md>",
+      "steps": 100000,
+      "stride": 200,
+      "notes": "<一行 rationale 链回 design §>"
+    }
+  ],
+  "pipeline": {
+    "preflight": true,
+    "smoke": true,
+    "smoke_steps": 100,
+    "production": true,
+    "analyze": true,
+    "analyzer_class": "<Paper>Analyzer",
+    "halt_on_fail": true,
+    "max_parallel": 1,
+    "visualize": {"enabled": true, "class": "<Paper>Plotter"}
+  },
+  "aggregation": {
+    "enabled": true,
+    "class": "<Paper>Aggregator",
+    "output": "docs/<paper>_campaign_report.md",
+    "plots": ["overview"]
+  }
+}
+```
+
+如果想看带三个状态点 + FD-balanced 热浴 + 完整 aggregator 接线的真实例子，复制 `configs/plan_pedersen_kalj.json` 来改——它是场景 A + 积分器 override 的标准范例。如果要 30 秒级 sanity check 的单温度 smoke 启动，`configs/examples/plan_pedersen_kalj_smoke.json` 是同一份 campaign 的最小版本。
+
+`pipeline.analyzer_class`、`pipeline.visualize.class`、`aggregation.class` 引用的类**必须**已经在 `tools/registry.py:_REGISTRY` 里。如果它们不在（场景 B 的分析器 / 绘图器 / 聚合器），先回到八步扩展把那几步做完，这份配置才能通过校验。
+
+#### 第 6 步 —— `--strict` 校验
+
+每份配置在烧 GPU 之前先过三道前置校验：
+
+```bash
+python scripts/validate_config.py configs/plan_<your_topic>.json --strict
+```
+
+退出码：
+- `0` —— schema、物理规则、预算全部通过。进第 7 步。
+- `1` —— schema 或物理校验失败。读 `ERR` 行，改 JSON，重跑。
+- `2` —— 仅有 warning（非严格模式 pass，严格模式 fail）。读 `warn` 行决定：要么改配置，要么在 `_comment` 里记录 override 并跑非 `--strict` 模式（前提是你清楚自己在权衡什么）。
+
+校验器还会打成本估计（每 run 墙钟、总 VRAM、磁盘）。和 design §7 交叉核对。两边偏离超过 2× 时，校验器的 step-rate 模型相对你的硬件已陈旧——开 issue 报告，并相信更近的那一份。
+
+校验通过后，再跑一次**不带** `--strict` 的，看看严格模式藏起来的 warning——这些都是后续要修但不阻塞 campaign 的事。
+
+#### 第 7 步 —— 启动
+
+框架只有一个入口：
+
+```bash
+python scripts/run_experiment.py configs/plan_<your_topic>.json
+```
+
+Pipeline 按序跑：**preflight → smoke → production → analyze (3.4) → visualize (3.5) → aggregate**。Smoke 用 100 步小爆破抓崩溃；任何 smoke 失败 + `halt_on_fail=true` 就阻断 production。每条 production 落到 `outputFiles/<TS>_<tag>/`，含 `manifest.json` + `<base>_<step>.h5` + `run.in` + `lattice.xyz`。Phase 3.4 给每个 dir 写 `report.md`，Phase 3.5 写 `figN_*.png`，Phase 4 写 `docs/<paper>_campaign_report.md` + `docs/images/<paper>_*.png` 跨 run 汇总。
+
+**没看到答案就不算复现完。** 每个 production run dir 至少要有：
+
+```
+outputFiles/<TS>_<tag>/
+├── manifest.json     ← 引擎接通
+├── report.md         ← 分析器跑了（Phase 3.4）
+└── fig*.png          ← 绘图器跑了（Phase 3.5）
+```
+
+如果 run dir 缺 `report.md` 或 `fig*.png`，分析器 / 绘图器没正确注册——回到八步扩展的 Step 7 / Step 8 修。
+
+GPU 何时烧由你决定。框架不会从 design 阶段自动启动 production。
+
+---
+
+### 八步力类扩展
+
+第 2 步告诉你论文势能不在 `forces/` 时走这条。参考实现是 commits `0f0593a` → `b6169c4` → `32f15bb` 中的 Kob-Andersen 扩展；下面提到的每个文件在 main 上都有真实实例。
+
+#### 第 1 步 —— 写力类
+
+复制模板，存到 `forces/`：
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/force_class.py.template \
+   forces/<your_force>.py
+```
+
+继承 `forces.base` 的 `forceField`，声明两个类级属性（`requires_full_list` 和 `PREFLIGHT_FIELDS`），实现 `updateOneF_reciprocal` 或 `updateOneF_nonreciprocal`。`forces/kalj.py` 是最干净的扩展参考——覆盖了二元混合需要的 per-pair (σ, ε) 选择；`forces/lennard_jones.py` 是单一物种最简参考。
+
+模板形状：
+
+```python
+# forces/<your_force>.py
+from constSet import *
+from forces.base import forceField
+
+
+@ti.data_oriented
+class <YourForce>(forceField):
+    requires_full_list = True              # full 邻居表对每对粒子访问 (i,j) 和 (j,i) 两次
+    PREFLIGHT_FIELDS = ("<paper-specific kwargs>",)
+
+    def __init__(self, <paper params>):
+        ...
+        self.reciprocal = True             # 多数力是；非互易力设 False
+
+    @ti.func
+    def updateOneF_reciprocal(self, i: ti.i32, j: ti.i32):
+        rij = self.searchBox.applyMic(self.atomSystem.pos[j] - self.atomSystem.pos[i])
+        r = rij.norm()
+        if r * r <= self.cutoffSquare:
+            f_mag = ...                                    # -dV/dr at r
+            self.atomSystem.force[i] += -f_mag * (rij / r)
+            U_pair = ...                                    # r 处的完整 pair 势能
+            self.atomSystem.pe_per_atom[i] += 0.5 * U_pair  # 0.5 是因为 full-list 每对访问两次
+```
+
+新类要注册到**两处** registry —— 一处包内本地，一处全局：
+
+```python
+# forces/__init__.py —— 本地 registry，直接 import 时使用
+from forces.<your_force> import <YourForce>
+
+FORCE_REGISTRY: dict[str, type] = {
+    # ... 已有条目原样保留 ...
+    "<your_force_type>": <YourForce>,
+}
+
+__all__ = [..., "<YourForce>", "FORCE_REGISTRY"]
+```
+
+```python
+# tools/registry.py —— 单一转发站，由 config 驱动的分发查这里
+_REGISTRY: dict[str, str] = {
+    # ... 已有条目原样保留 ...
+    "<YourForce>": "forces.<your_force>:<YourForce>",
+}
+```
+
+回归测试 `tests/test_skill_regression.py:test_registry_local_init_sync` 守这两边的同步。任何一边漏改下一次 `pytest -q` 就大声报错。
+
+**验证**：`python -c "from forces import <YourForce>, FORCE_REGISTRY; print(FORCE_REGISTRY)"` 列出你的新条目。
+
+#### 第 2 步 —— 写测试
+
+Pair tests 用解析双粒子计算核对力大小，核对力的对称（或非互易力的反对称），核对 cutoff 边界行为。
+
+```bash
+cp tests/test_kalj_3cases.py tests/test_<your_class>_<N>cases.py
+# 把解析目标换成你的势能
+```
+
+跑到 green：
+
+```bash
+pytest tests/test_<your_class>_*.py -x -v
+```
+
+production 前测试是必须的；这是 `f_mag` 符号错误或 PE 累加器漏 `0.5 *` 这类问题在污染数小时 GPU 时间之前被抓出来的地方。
+
+#### 第 3 步 —— Adapter（论文专属入口脚本）
+
+Adapter 是项目根的脚本，把你的力类包装成平台 CLI 契约。复制模板：
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/adapter_run.py.template <topic>_run.py
+```
+
+镜像 `pedersen_kalj_run.py` 改造。结构是：
+
+1. 顶部 `PARAMS` dict：论文默认值，含 `force_type`、`integrator`、晶格选择、论文专属 kwargs。
+2. `_prepare_lattice(p, suffix)`：用 `tools.lattices.LATTICE_REGISTRY[p["initial_state"]]` 生成初始位置，把晶格文件写到 `dataFiles/`。
+3. `_write_run_in(p, suffix)`：把运行参数写成 `dataFiles/` 下的 `run.in` 文本文件。
+4. `main()`：解析 CLI，构造 `systemRun(...)`，调用 `runWithData()`，写 `manifest.json` 到 run dir。
+
+Adapter **绝不能**在进程内调用分析器、绘图器、可视化——这是 `docs/ARCHITECTURE.md §3.1` 的 *FORBIDDEN*。Pipeline Phase 3.4 / 3.5 / 4 按 registry 名分发它们。
+
+**验证**：跑一次绕过 pipeline 的 CLI smoke：
+
+```bash
+python <topic>_run.py --tag smoke --steps 100 --N 200 --T0 1.0
+ls outputFiles/<TS>_smoke/
+# 应有：manifest.json + .h5 + run.in + lattice.xyz
+```
+
+#### 第 4 步 —— Dispatcher 接线 + validator 分支
+
+`scripts/run_experiment.py` 要知道怎么启动你的 adapter：
+
+```python
+# scripts/run_experiment.py
+MD_SCRIPT_<TOPIC> = _ROOT / "<topic>_run.py"        # 加在已有 MD_SCRIPT_* 行附近
+
+EXP_DEFAULTS_BY_TYPE = {
+    # ... 已有条目 ...
+    "<your_force_type>": {                          # 加你的默认值
+        "N": 1000, "stride": 200, "nu": 0.1,
+        # ... 其他默认 ...
+    },
+}
+
+EXP_REQUIRED_<TYPE> = ("tag", "<paper-required-1>", "<paper-required-2>", "steps")
+
+# 在 _normalize_config 里：
+if force_type == "<your_force_type>":
+    required = EXP_REQUIRED_<TYPE>
+
+# 在 _invoke_md 里：
+elif force_type == "<your_force_type>":
+    cmd = [PYTHON, str(MD_SCRIPT_<TOPIC>),
+           "--tag", str(exp["tag"]),
+           # ... exp 字典键映射成 CLI flag ...]
+```
+
+`scripts/validate_config.py:check_force_type_specific` 也要加平行分支：
+
+```python
+elif ft == "<your_force_type>":
+    # 论文专属物理 warning（亚临界阻尼、晶格不匹配等）
+    ...
+```
+
+漏 validator 分支会让 `else: res.err("unknown force_type")` 静默触发，你的配置永远过不了校验。
+
+**验证**：一份带 `"force_type": "<your_force_type>"` 的 dummy 配置过 `validate_config.py` 时不再抱怨 unknown force_type。
+
+#### 第 5 步 —— Schema enum + 条件
+
+`templates/plan_config.schema.json` 是框架接受何种配置的唯一权威：
+
+```json
+{
+  "properties": {
+    "force_type": {
+      "enum": ["hertzian_nonreciprocal", "er_plasma", "kalj", "<your_force_type>"]
+    }
+  },
+  "allOf": [
+    {
+      "if":   { "properties": { "force_type": { "const": "<your_force_type>" } } },
+      "then": {
+        "required": ["<paper-required-fields>"],
+        "properties": {
+          "ndim":         { "const": 3 },
+          "units_regime": { "const": "reduced_lj" }
+        }
+      }
+    }
+  ]
+}
+```
+
+如果论文引入全新的 units regime（`units/` 下要新加一个 yaml），同样在这里扩 `units_regime` 顶层 enum。
+
+**验证**：`python scripts/validate_config.py configs/<your_test>.json --strict` 退 0。
+
+#### 第 6 步 —— 在 registry 文档登记
+
+`references/force_types.md` 是 schema enum 的人类可读对应。新加一节（下面外层用 4 个反引号，让嵌套的 `json` 块能正常渲染）：
+
+````markdown
+## N. `<your_force_type>`  (<论文 Citation>)
+
+- **paper**: <citation>
+- **entry script**: `<topic>_run.py`
+- **force class**: `forces.<your_force>:<YourForce>`
+- **analyzer**: `tools.analyzers.<paper>:<Paper>Analyzer`
+- **plotter**: `tools.plotters.<paper>:<Paper>Plotter`
+- **aggregator**: `tools.aggregators.<paper>:<Paper>Aggregator`
+- **compat**: `ndim=<2|3>`, `units_regime=<reduced_lj|...>`
+- **integrator**: <baoab_drag | baoab_langevin | ...>
+- **IC**: <initial_state 选择 + 物种标签规则>
+
+### Required fields per experiment
+| field | type | range | meaning |
+|-------|------|-------|---------|
+| ... |
+
+### Optional fields
+| field | type | default | meaning |
+|-------|------|---------|---------|
+| ... |
+
+### Critical pre-flight rules
+- ...
+
+### Example
+```json
+{ ... 标准配置块 ... }
+```
+````
+
+同时在 `force_types.md` 顶部的 **Conventions table** 加一行写明你的 N 含义和默认 IC。
+
+#### 第 7 步 —— Analyzer
+
+按 run 分析的类，读轨迹、写 `report.md`，并可选写 `*.npz` 给绘图器消费：
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/analyzer.py.template \
+   tools/analyzers/<paper>.py
+```
+
+把模板里的 `MyAnalyzer` 改名为 `<Paper>Analyzer`，实现 `full_analysis(run_dir, **params) -> dict`，让该方法把 `<run_dir>/report.md` 作为副作用写出。完整契约在 `templates/physics_design.md §1.5`，`tools/analyzers/pedersen.py` 是最干净的 KA-LJ 范例。
+
+再注册到**两处**：
+
+```python
+# tools/analyzers/__init__.py
+from tools.analyzers.<paper> import <Paper>Analyzer
+__all__ = [..., "<Paper>Analyzer"]
+
+# tools/registry.py:_REGISTRY
+"<Paper>Analyzer": "tools.analyzers.<paper>:<Paper>Analyzer",
+```
+
+在你的 campaign 配置里设 `pipeline.analyze=true` 和 `pipeline.analyzer_class="<Paper>Analyzer"`——Phase 3.4 必须两者都在才触发。
+
+**验证**：重跑第 4 步那次单 production，run dir 现在含 `report.md`。
+
+#### 第 8 步 —— Plotter 和 Aggregator
+
+按 run 出图，跨 run 出报告：
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/plotter.py.template \
+   tools/plotters/<paper>.py
+cp .claude/skills/paper-to-experiment/templates/aggregator.py.template \
+   tools/aggregators/<paper>.py
+```
+
+`<Paper>Plotter.render(run_dir, **params)` 给每个 run dir 写 ≥1 张 `<run_dir>/figN_*.png`；`<Paper>Aggregator.aggregate(run_dirs, output, plots, title, **params)` 写主报告 `docs/<paper>_campaign_report.md`，并通过调用绘图器可选的 `fig_<name>` static 方法 render 跨 run 图。
+
+两个类都注册到 `tools/registry.py:_REGISTRY`，并镜像到 `tools/plotters/__init__.py` 和 `tools/aggregators/__init__.py`。
+
+在 campaign 配置里设 `pipeline.visualize.enabled=true`、`pipeline.visualize.class="<Paper>Plotter"`、`aggregation.enabled=true`、`aggregation.class="<Paper>Aggregator"`。
+
+**验证（也是八步扩展的最终门）**：重跑一次完整 pipeline；每个 production run dir 现在含 `manifest.json + report.md + fig*.png`，`docs/<paper>_campaign_report.md` 加跨 run 图也存在。这满足 SKILL Hard rule #9，扩展完成。你现在可以从七步复现的第 5 步继续。
+
+---
+
+### 九步积分器扩展
+
+论文核心观测量是扩散 / 黏度 / 玻璃动力学或任何要靠 fluctuation-dissipation 平衡热浴才能复现的传输 / 涨落量时走这条。默认 `baoab_drag` 是 drag-only Langevin —— 噪声项缺，所以 MSD 平台、`T_meas` 漂。`f65f5d3` commit 中的 `BAOABLangevin` 扩展是标准范例，下面提到的每个文件在 main 上都有真实实例。
+
+#### 第 1 步 —— 写积分器类
+
+复制模板，存到 `integrators/`：
+
+```bash
+cp .claude/skills/paper-to-experiment/templates/integrator.py.template \
+   integrators/<your_scheme>.py
+```
+
+继承 `integrators.base` 的 `IntegratorBase`，声明三个类级属性：
+
+```python
+# integrators/<your_scheme>.py
+import math
+from constSet import *
+import constSet as cs
+from integrators.base import IntegratorBase
+
+
+@ti.data_oriented
+class <YourScheme>(IntegratorBase):
+    REQUIRED_KWARGS = ("timeStep", "<paper-required>")
+    OPTIONAL_KWARGS = ("nu",)
+    SCHEME_NAME = "<your_scheme>"
+
+    def __init__(self, timeStep, <paper-required>, nu=0.0):
+        self.delta_t = float(timeStep)
+        self.delta_tHalf = self.delta_t / 2.0
+        # ... 缓存方案专属常量 ...
+
+    @ti.kernel
+    def step_<...>_<...>(self):
+        ...
+
+    def inteBegin(self):
+        # 你方案的一整步 splitting；ndim=2 时末尾别忘了 atomSystem.zeroZ
+        ...
+```
+
+`integrators/baoab_langevin.py` 是短（~60 行）且清晰的 FD-平衡 Wiener-noise 范例，含 `(1 − α²)·k_B·T_target/m` 前因子和 `@ti.kernel` 内 `ti.randn()` recipe。扩展其他随机方案时直接抄它的骨架。
+
+#### 第 2 步 —— 测试
+
+最小测试集：
+
+- **ν=0 时退化为 NVE**：噪声项关掉时方案应该退化为 Velocity Verlet，长时间能量漂移有界。
+- **热浴目标命中**：从非平衡 IC 出发，`T_meas` 在容差内（默认 5%；不 pin Taichi RNG seed 时容差小一点是合理的）收敛到 `T_target`。
+- **Wiener 噪声可复现**：固定 `cs.reconfigure(random_seed=S)` 时两次跑产生一致轨迹。
+
+`tests/test_baoab_langevin_3cases.py` 是标准范例。
+
+#### 第 3 步 —— 本地 registry
+
+```python
+# integrators/__init__.py
+from integrators.<your_scheme> import <YourScheme>
+
+INTEGRATOR_REGISTRY: dict[str, type] = {
+    "baoab_drag":     BAOABDrag,
+    "baoab_langevin": BAOABLangevin,
+    "<your_scheme>":  <YourScheme>,
+}
+
+__all__ = [..., "<YourScheme>"]
+```
+
+#### 第 4 步 —— 转发站
+
+```python
+# tools/registry.py:_REGISTRY
+"<YourScheme>": "integrators.<your_scheme>:<YourScheme>",
+```
+
+#### 第 5 步 —— Schema enum + 条件
+
+```json
+{
+  "properties": {
+    "integrator": {
+      "enum": ["baoab_drag", "baoab_langevin", "<your_scheme>"]
+    }
+  },
+  "allOf": [
+    {
+      "if":   { "properties": { "integrator": { "const": "<your_scheme>" } }, "required": ["integrator"] },
+      "then": { "required": ["<scheme-required-fields>"] }
+    }
+  ]
+}
+```
+
+`if` 子句里那条 `"required": ["integrator"]` 是必须的——少了它，条件就匹配每条没设 `integrator` 的 campaign，悄悄强制约束作者本来不打算约束的项。
+
+#### 第 6 步 —— Validator 稳定性规则
+
+`scripts/validate_config.py:check_integrator_specific` 是专门给积分器的钩子，由 `main()` 在 `check_force_type_specific` 旁边调：
+
+```python
+def check_integrator_specific(cfg, res: Result):
+    for exp in cfg.get("campaign", []):
+        scheme = exp.get("integrator", "baoab_drag")
+        tag = exp.get("tag", "<no-tag>")
+
+        if scheme == "<your_scheme>":
+            # 论文专属稳定性规则，例如 dt × nu < 0.1
+            ...
+```
+
+`baoab_langevin` 今天的 `dt × ν < 0.1` 就是这么强制的。给你的方案加新分支。
+
+#### 第 7 步 —— Adapter 接线
+
+每个想用新积分器的 adapter 按名字分发：
+
+```python
+# 你的 <topic>_run.py main() 里
+integrator_name = p.get("integrator", DEFAULT_INTEGRATOR)
+integrator_cls = INTEGRATOR_REGISTRY[integrator_name]
+inte_kwargs = {"timeStep": p["dt"], "nu": p["nu"]}
+if "<paper-required>" in integrator_cls.REQUIRED_KWARGS:
+    inte_kwargs["<paper-required>"] = p["<paper-required>"]
+
+system = systemRun(..., integrator=integrator_cls, ..., inteParams=inte_kwargs)
+```
+
+`pedersen_kalj_run.py` 第 175-195 行是这种分发模式最干净的参考。
+
+#### 第 8 步 —— Registry 文档表行
+
+在 `references/force_types.md §4` 的 *Integrator selection* 表加一行：
+
+| `integrator` | 方案 | 何时用 | 注意 |
+|--------------|------|--------|------|
+| `<your_scheme>` | <一行说明> | <要求该方案的观测量> | <稳定性 / 适用范围> |
+
+如果你的方案除了 `nu` 和 `T_target` 还要别的字段，在 §3 / §5b 加一段示例配置块展示标准用法。
+
+#### 第 9 步 —— 同步回归测试
+
+`tests/test_skill_regression.py` 中的 `test_integrator_schema_enum_synced_with_registry` 已经断言每个 `INTEGRATOR_REGISTRY` 键都出现在 schema 的 `integrator` enum 里、反之亦然。把你的方案加到双 registry（第 3 + 4 步）和 schema（第 5 步）后这个测试自动通过。如果加方案但漏 schema enum，下一次 `pytest -q` 就 fail。也可考虑加一个对应于 `test_registry_local_init_sync` 的 sibling 测试断言新积分器在 `tools/registry.py:_REGISTRY` 中存在。
+
+**验证（也是九步扩展的最终门）**：`pytest -q` 报告基线 pass 数 + 你的新测试，且一份带 `"integrator": "<your_scheme>"` 的 campaign 配置 `--strict` 校验退 0。
+
+你现在可以从七步复现的第 3 步（或 design 已写过则第 5 步）继续。
+
+---
+
 ## 添加自己的论文
 
 最快的情况是论文复用框架已经支持的 force_type。挑一个最贴近你物理的起点——`configs/examples/plan_g_er_chains.json` 适合各向异性 Yukawa 系列，`configs/examples/plan_pedersen_kalj_smoke.json` 适合二元混合或对扩散敏感、需要 FD 平衡热浴的论文——然后本地迭代：
