@@ -52,8 +52,12 @@ The framework is **strictly layered**. Each layer talks ONLY to the layer below 
 ║  • Force classes (one file each in forces/):                           ║
 ║    HertzianNonreciprocal, ERPotential, lennardJones, KobAndersenLJ     ║
 ║  • Integrator schemes (one file each in integrators/):                 ║
-║    BAOABDrag (drag-only Langevin; default)                             ║
-║  Out of scope for now: integrators, accelerators (current sufficient)  ║
+║    BAOABDrag (drag-only Langevin; default for legacy reproductions),   ║
+║    BAOABLangevin (Wiener-noise FD-balanced; required for diffusion-    ║
+║    sensitive runs)                                                     ║
+║  Layer 1 math is frozen, but the forces/ and integrators/ packages     ║
+║  accept new registered classes via the 8-step force and 9-step         ║
+║  integrator extension flows documented in references/force_types.md.   ║
 ╚══════════════════════════════════════════════════════════════════════╝
                                   ▲
                                   │ tools/analyzers/, tools/visualizers/,

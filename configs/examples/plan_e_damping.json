@@ -2,6 +2,7 @@
   "_comment": "Plan E — P3 damping experiments. Sweep nu > 0 at the proven-PASS NVE point (phi=0.3, T0=0.3). Reference: paper PRX 2015 §II.C / Fig 4 — damping drives system to STEADY STATE T_inf with no further power-law growth. Verify Eq. 11 prediction T_inf scaling with nu.",
   "campaign": [
     {
+      "force_type": "hertzian_nonreciprocal",
       "tag": "E10_nu001",
       "phi": 0.3,
       "T0": 0.3,
@@ -12,6 +13,7 @@
       "notes": "Plan E 1/4 — weak damping, expect long approach to steady state"
     },
     {
+      "force_type": "hertzian_nonreciprocal",
       "tag": "E11_nu01",
       "phi": 0.3,
       "T0": 0.3,
@@ -22,6 +24,7 @@
       "notes": "Plan E 2/4 — moderate damping"
     },
     {
+      "force_type": "hertzian_nonreciprocal",
       "tag": "E12_nu1",
       "phi": 0.3,
       "T0": 0.3,
@@ -32,6 +35,7 @@
       "notes": "Plan E 3/4 — strong damping, fast steady state"
     },
     {
+      "force_type": "hertzian_nonreciprocal",
       "tag": "E13_nu10",
       "phi": 0.3,
       "T0": 0.3,
@@ -54,7 +58,11 @@
   "aggregation": {
     "enabled": true,
     "output": "docs/PRX_plan_e_damping_results.md",
-    "plots": ["fig1", "fig2", "stability"],
+    "plots": [
+      "fig1",
+      "fig2",
+      "stability"
+    ],
     "runs": "outputFiles/*_E1[0-3]*",
     "title": "PRX 2015 Plan E — damping nu-sweep at (phi=0.3, T0=0.3)"
   }

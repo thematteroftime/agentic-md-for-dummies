@@ -1,0 +1,45 @@
+{
+  "_comment": "Pedersen et al. PRL 120, 165501 (2018) Kob-Andersen binary LJ — smoke-scale single-temperature run for the Quickstart guide. N=200 (160 A + 40 B), single state point at the paper's Tm (T=1.0, rho=1.2), 5000 production steps; finishes in well under a minute on an RTX 5060 Laptop. The full 3-temperature campaign lives at configs/plan_pedersen_kalj.json. Use this file as the canonical 'copy-and-adapt' starting point when wiring a new binary-LJ paper.",
+  "_paper_ref": "Pedersen et al., Phys. Rev. Lett. 120, 165501 (2018)",
+  "_paper_pdf": "papers/pedersen_prl2018.pdf",
+  "_design_doc": "references/examples/worked_example_PRL2018_KALJ.md",
+  "_force_type_doc": "references/force_types.md §3",
+  "_units_doc": "reduced_lj",
+  "campaign": [
+    {
+      "force_type": "kalj",
+      "tag": "kalj_smoke_T10",
+      "T0": 1.0,
+      "T_target": 1.0,
+      "rho": 1.2,
+      "N": 200,
+      "fraction_B": 0.20,
+      "nu": 0.1,
+      "dt": 0.005,
+      "steps": 5000,
+      "stride": 50,
+      "cho": 2,
+      "ndim": 3,
+      "units_regime": "reduced_lj",
+      "integrator": "baoab_langevin",
+      "notes": "smoke: single state point at paper Tm=1.028; demonstrates the 8-step force + 9-step integrator extension end-to-end with FD-balanced thermostat at T=1.0"
+    }
+  ],
+  "pipeline": {
+    "preflight": true,
+    "smoke": true,
+    "smoke_steps": 100,
+    "production": true,
+    "analyze": true,
+    "analyzer_class": "PedersenAnalyzer",
+    "halt_on_fail": true,
+    "max_parallel": 1,
+    "visualize": {
+      "enabled": true,
+      "class": "PedersenPlotter"
+    }
+  },
+  "aggregation": {
+    "enabled": false
+  }
+}

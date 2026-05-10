@@ -233,33 +233,32 @@ Each step has a template file under `.claude/skills/paper-to-experiment/template
 
 ## Adding your own paper
 
-The fastest case (paper uses a force type already in the repo):
+The fastest case is when the paper reuses a force type that the framework already ships. Pick a starter that is closest to your physics — `configs/examples/plan_g_er_chains.json` for an anisotropic-Yukawa-flavoured paper, or `configs/examples/plan_pedersen_kalj_smoke.json` for a binary-mixture or diffusion-sensitive paper that needs the FD-balanced thermostat — then iterate locally:
 
 ```
-1.  cp configs/examples/plan_e_damping.json configs/plan_<your_topic>.json
+1.  cp configs/examples/plan_pedersen_kalj_smoke.json configs/plan_<your_topic>.json
 2.  Edit campaign[0] params per the paper. Cite Eq./Fig. in `notes`.
 3.  python scripts/validate_config.py configs/plan_<your_topic>.json --strict
 4.  python scripts/run_experiment.py  configs/plan_<your_topic>.json
 ```
 
-The bigger case (new force type, new analyzer, new figure):
+The bigger case applies when the paper introduces a new force, a new integration scheme, a paper-specific analyzer, or a paper-specific plotter / aggregator. The skill ships templates for each extension point, and `references/force_types.md §4` (force class) plus `§5b` (integrator) document the corresponding 8-step and 9-step extension flows. Drop each template into the correct package, then add one row each to `tools/registry.py` and to the matching package's local registry — the regression tests will fail loudly if either side drifts.
 
 | Goal | Copy template | Save as |
 |------|---------------|---------|
-| New force type | `templates/force_class.py.template` | save as `forces/<your_force>.py` |
+| New force type | `templates/force_class.py.template` | `forces/<your_force>.py` |
+| New integrator scheme | `templates/integrator.py.template` | `integrators/<your_scheme>.py` |
 | New paper adapter | `templates/adapter_run.py.template` | `<topic>_run.py` |
 | New analyzer | `templates/analyzer.py.template` | `tools/analyzers/<topic>.py` |
-| New visualizer | `templates/visualizer.py.template` | `tools/visualizers/<topic>.py` |
 | New plotter | `templates/plotter.py.template` | `tools/plotters/<topic>.py` |
-| New aggregator | (use plotter template + see `tools/aggregators/`) | `tools/aggregators/<topic>.py` |
-
-Each template has TODO markers. Filling them in order produces a contract-compliant component. Then add one line to `tools/registry.py` to register the class name.
+| New aggregator | `templates/aggregator.py.template` | `tools/aggregators/<topic>.py` |
+| New visualizer | `templates/visualizer.py.template` | `tools/visualizers/<topic>.py` |
 
 ---
 
 ## Reference reproductions
 
-The two papers below are reproduced as worked examples. Configs in `configs/examples/`, analyzers in `tools/analyzers/`, figures below.
+Three papers are reproduced end-to-end and shipped as worked examples in this repository. Each is a complete walk through the skill: a JSON config under `configs/`, a per-paper analyzer / plotter / aggregator under `tools/`, and either reproduction figures committed to `docs/images/` (PRX 2015, PRL 2008) or a cross-run report rendered into `docs/` on demand (PRL 2018). The first two cover the original physics-engine validation; the third was added during the `v0.2.0` cycle to exercise the binary-mixture force extension and the FD-balanced Langevin integrator extension on the same paper.
 
 ### Ivlev et al., *Phys. Rev. X* 5, 011035 (2015)
 
@@ -310,6 +309,20 @@ The two papers below are reproduced as worked examples. Configs in `configs/exam
   <br><em>Figure 17 — Chain length distribution. ⟨L⟩ peaks at MT=0.8; collapses at sonic limit MT=1.</em>
 </p>
 
+### Pedersen, Schrøder, Dyre, *Phys. Rev. Lett.* 120, 165501 (2018)
+
+**Kob-Andersen binary Lennard-Jones mixture, structural and dynamic verification.** This reproduction is qualitative by design: the engine has no NPT and no Frenkel-Ladd free-energy integration, so the paper's central coexistence-line claim (T_m = 1.028 at ρ = 1.2) is documented as out of scope and the campaign instead targets the partial radial distribution functions and per-species diffusivity along the (T = {0.7, 1.0, 1.3}, ρ = 1.2) isochore.
+
+| Observable | Paper / analytic target | Reproduced (T = 1.0, ρ = 1.2) |
+|------------|--------------------------|-------------------------------|
+| g_AA first peak | σ_AA · 2^{1/6} ≈ 1.122 σ_AA | 1.094 σ_AA (2.5% under) |
+| g_AB first peak | σ_AB · 2^{1/6} ≈ 0.898 σ_AA | 0.906 σ_AA (0.9% over) |
+| g_AB peak < g_AA peak | strict ordering from σ_AB < σ_AA | satisfied at all three temperatures |
+| T_meas vs T_target (FD setpoint) | within 5% on the late half of the trajectory | 0.27% at T = 1.3, 0.78% at T = 1.0, 0.80% at T = 0.7 |
+| Diffusivity ordering D_B > D_A | implied by σ_BB < σ_AA | D_B / D_A ≈ 1.4 at all three temperatures |
+
+The campaign is the canonical example of the joint **8-step force extension** (`forces/kalj.py:KobAndersenLJ` + analyzer / plotter / aggregator) and **9-step integrator extension** (`integrators/baoab_langevin.py:BAOABLangevin`) flow. The full design walkthrough lives at `.claude/skills/paper-to-experiment/references/examples/worked_example_PRL2018_KALJ.md`. The campaign config that produced the numbers above is `configs/plan_pedersen_kalj.json`; for a sub-minute smoke run, see `configs/examples/plan_pedersen_kalj_smoke.json`.
+
 ---
 
 ## Project layout
@@ -329,7 +342,7 @@ md-for-dummies/
 │   └── creator/                    meta-skill (generate a paper-to-experiment
 │                                    skill for a different framework — WIP)
 │
-├── configs/examples/               worked example configs from the 3 papers
+├── configs/examples/               worked example configs (PRX-era, ER, and a KA-LJ smoke)
 │
 ├── tools/                          platform package (registry-dispatched)
 │   ├── analyzers/{prx,er,pedersen}.py

@@ -2,40 +2,44 @@
   "_comment": "Plan F — SUBCRITICAL damping nu-sweep. Plan E showed all 4 nu values (1e-3, 1e-2, 1e-1, 1) are SUPERCRITICAL at T0=0.3 (nu_c ≈ 4.5e-4 derived from c=1.5e-4 NVE fit). Plan F uses much smaller nu values to get sustained steady states matching paper PRX 2015 §II.C / Fig 4. Steps increased to 5M = 20000 τ (sufficient time to settle into steady state for the strongest of these subcritical nu).",
   "campaign": [
     {
+      "force_type": "hertzian_nonreciprocal",
       "tag": "E14_nu1em5",
       "phi": 0.3,
       "T0": 0.3,
-      "nu": 1e-5,
+      "nu": 1e-05,
       "N": 10000,
       "steps": 5000000,
       "stride": 600,
       "notes": "Plan F 1/4 — very weak (nu=1e-5 ≈ 0.022 nu_c), expect T_inf ≈ (c/2nu)^(2/3) ≈ 3.86 (T grows from 0.3 to plateau)"
     },
     {
+      "force_type": "hertzian_nonreciprocal",
       "tag": "E15_nu1em4",
       "phi": 0.3,
       "T0": 0.3,
-      "nu": 1e-4,
+      "nu": 0.0001,
       "N": 10000,
       "steps": 5000000,
       "stride": 600,
       "notes": "Plan F 2/4 — weak (nu=1e-4 ≈ 0.22 nu_c), expect T_inf ≈ 0.83"
     },
     {
+      "force_type": "hertzian_nonreciprocal",
       "tag": "E16_nu3em4",
       "phi": 0.3,
       "T0": 0.3,
-      "nu": 3e-4,
+      "nu": 0.0003,
       "N": 10000,
       "steps": 5000000,
       "stride": 600,
       "notes": "Plan F 3/4 — near-critical (nu=3e-4 ≈ 0.67 nu_c), expect T_inf ≈ 0.40 ≈ T0"
     },
     {
+      "force_type": "hertzian_nonreciprocal",
       "tag": "E17_nu5em4",
       "phi": 0.3,
       "T0": 0.3,
-      "nu": 5e-4,
+      "nu": 0.0005,
       "N": 10000,
       "steps": 5000000,
       "stride": 600,
@@ -54,7 +58,10 @@
   "aggregation": {
     "enabled": true,
     "output": "docs/PRX_plan_f_subcritical_damping.md",
-    "plots": ["fig1", "fig2"],
+    "plots": [
+      "fig1",
+      "fig2"
+    ],
     "runs": "outputFiles/*_E1[4-7]*",
     "title": "PRX 2015 Plan F — subcritical damping at (phi=0.3, T0=0.3)"
   }
