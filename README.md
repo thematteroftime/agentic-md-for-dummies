@@ -9,6 +9,7 @@
   <a href="#how-it-works">How it works</a> •
   <a href="#quickstart">Quickstart</a> •
   <a href="#the-ai-skill-workflow">AI Skill Workflow</a> •
+  <a href="#human-developer-walkthrough">Human Walkthrough</a> •
   <a href="#adding-your-own-paper">Add Your Paper</a> •
   <a href="#references">References</a>
 </p>
@@ -405,9 +406,9 @@ Each step has a template file under `.claude/skills/paper-to-experiment/template
 
 ---
 
-## Human-developer walkthrough — step by step
+## Human-developer walkthrough
 
-This section is the human-side counterpart of `.claude/skills/paper-to-experiment/SKILL.md`. It is intentionally detailed: every checkpoint, every file you touch, every command you run is spelled out, and the Kob-Andersen binary LJ reproduction at `configs/plan_pedersen_kalj.json` is the running example. If you have read the AI Skill Workflow above and want to do the same thing yourself, this is the equivalent map.
+This section is the human-side counterpart of `.claude/skills/paper-to-experiment/SKILL.md`, written as a step-by-step guide. It is intentionally detailed: every checkpoint, every file you touch, every command you run is spelled out, and the Kob-Andersen binary LJ reproduction at `configs/plan_pedersen_kalj.json` is the running example. If you have read the AI Skill Workflow above and want to do the same thing yourself, this is the equivalent map.
 
 Three scenarios cover almost every case:
 

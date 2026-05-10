@@ -9,6 +9,7 @@
   <a href="#工作原理">工作原理</a> •
   <a href="#快速开始">快速开始</a> •
   <a href="#ai-skill-工作流">AI Skill 工作流</a> •
+  <a href="#人类开发者保姆教程">人类教程</a> •
   <a href="#添加自己的论文">添加论文</a> •
   <a href="#参考文献">参考文献</a>
 </p>
@@ -406,9 +407,9 @@ Skill 会带你走 `force_types.md §4` 文档化的八步扩展流程：
 
 ---
 
-## 人类开发者保姆教程 —— 逐步走完
+## 人类开发者保姆教程
 
-这一节是 `.claude/skills/paper-to-experiment/SKILL.md` 的人类版镜像。**刻意写得很详细**：每个 checkpoint、每个动到的文件、每条要敲的命令都明列；`configs/plan_pedersen_kalj.json` 这一份 Kob-Andersen 二元 LJ 复现是贯穿全程的范例。如果你已经读过上面的 *AI Skill 工作流* 一节并想自己做同一件事，本节就是同等详细的人类版地图。
+这一节是 `.claude/skills/paper-to-experiment/SKILL.md` 的人类版镜像，按步骤逐节展开。**刻意写得很详细**：每个 checkpoint、每个动到的文件、每条要敲的命令都明列；`configs/plan_pedersen_kalj.json` 这一份 Kob-Andersen 二元 LJ 复现是贯穿全程的范例。如果你已经读过上面的 *AI Skill 工作流* 一节并想自己做同一件事，本节就是同等详细的人类版地图。
 
 三种场景覆盖几乎所有情况：
 
