@@ -1,4 +1,4 @@
-<h1 align="center">MD-for-Dummies</h1>
+<h1 align="center">Agentic MD-for-Dummies</h1>
 
 <p align="center">
   <strong>A small but complete molecular-dynamics framework for reproducing physics papers — driven by an AI skill that turns a paper into a runnable experiment config.</strong>
@@ -26,7 +26,7 @@
 
 Most MD papers come with screenshots, a methods section, and a wave goodbye. **Reproducing them takes weeks.** You read the paper, decode the parameters, build a runner, glue together force fields, write analysis, plot figures, then realize you misread `T₀=0.3` as `T=0.3`.
 
-`md-for-dummies` is a **paper-driven workflow** built on a minimal Taichi MD core. It is:
+`agentic-md-for-dummies` is a **paper-driven workflow** built on a minimal Taichi MD core. It is:
 
 > **Not** another high-performance MD engine. There are excellent ones (LAMMPS, GROMACS, GPUMD).
 >
@@ -121,8 +121,8 @@ Full architecture spec: [`ARCHITECTURE.md`](ARCHITECTURE.md).
 ### Install
 
 ```bash
-git clone https://github.com/thematteroftime/md-for-dummies
-cd md-for-dummies
+git clone https://github.com/thematteroftime/agentic-md-for-dummies
+cd agentic-md-for-dummies
 pip install -r requirements.txt
 ```
 
@@ -169,6 +169,176 @@ Three CLI helpers under `scripts/` that don't fit in the main pipeline:
 | `scripts/compute_delta_eff.py` | Numerically integrate the PRX 2015 `Δ_eff` and `ε` fingerprints from the force kernel — sanity-check before launching a Hertzian non-reciprocal campaign. |
 | `scripts/two_particle_calibration.py` | Two-particle controlled-collision test for the Hertzian non-reciprocal force — verifies single-pair energy injection against paper Eq. (5). |
 | `scripts/visualize_er_h5.py` | Real-time Taichi-UI animation of any HDF5 trajectory; also wrapped as `TaichiTrajectoryViz` in `tools/visualizers/` for config-driven dispatch. |
+
+---
+
+## Two ways to use this repo
+
+The skill is the headline feature, but the framework underneath it is plain Python and runs perfectly well without any AI in the loop. Pick the path that matches who you are.
+
+### 🤖 If you are an AI agent
+
+Your contract is the skill at `.claude/skills/paper-to-experiment/`. Read `SKILL.md` first; everything else (templates, registry, worked examples) is referenced from it. The shortest valid invocation is a single sentence in a Claude Code conversation:
+
+> *"Reproduce `papers/pedersen_prl2018.pdf` in this framework. Smoke-scale, NVT, three temperatures along the rho=1.2 isochore."*
+
+What happens next is the skill's 7-step config flow, which the skill itself describes. The two extension flows (8-step force, 9-step integrator) only fire when the paper actually requires a class the framework does not yet ship; in that case the skill stops at design-doc §2a or §3 and surfaces the choice for human greenlight before any code lands.
+
+A few prompt patterns that have proven robust across the five autonomous sub-agent rounds that produced this version:
+
+<details>
+<summary>Reproduction prompt — paper already covered by an existing force class</summary>
+
+```
+Reproduce <paper title and citation> using paper-to-experiment.
+
+Inputs:
+  paper PDF: papers/<slug>.pdf
+  scope:     <smoke | small production | full>; bound runs at <N>, steps at <M>;
+             3 state points on the (T, rho) isochore unless paper indicates more.
+
+Constraints:
+  - Use the existing force_type if the paper's potential is already covered;
+    otherwise stop at design doc §2a and ask before extending.
+  - Default integrator is baoab_drag for NVE / structural runs and
+    baoab_langevin for diffusion-sensitive runs (paper observable decides).
+  - Do NOT commit. Hand back the design doc + config + first run dir.
+```
+
+</details>
+
+<details>
+<summary>Extension prompt — paper introduces a new force class or integrator</summary>
+
+```
+The paper at papers/<slug>.pdf needs a new <force class | integrator>
+that the framework does not currently ship. Walk the
+references/force_types.md §<4 | 5b> extension flow end-to-end:
+
+  1. Implement the new class under forces/<name>.py or integrators/<name>.py
+  2. Tests in tests/test_<name>_<N>cases.py
+  3. Register in tools/registry.py + the matching package's __init__.py
+  4. Schema enum + conditional in templates/plan_config.schema.json
+  5. Validator branch (per-force-type or per-integrator)
+  6. Adapter wiring; analyzer / plotter / aggregator if step 7-8 of force flow
+
+Then re-run the campaign and verify Hard rule #9 holds (manifest + report
++ at least one fig per run dir). Critique to docs/specs/<date>-<topic>-critique.md.
+```
+
+</details>
+
+<details>
+<summary>Audit prompt — release readiness</summary>
+
+```
+Cross-validate that:
+  1. tools/registry.py:_REGISTRY entries are mirrored in each package's
+     local __init__.py (forces/, integrators/, tools/{analyzers,plotters,aggregators}/)
+  2. schema enum values for force_type and integrator both have working adapters
+     and are documented in references/force_types.md
+  3. SKILL.md hard rules + force_types.md §3 conventions table + worked examples
+     are mutually consistent
+  4. README and ARCHITECTURE describe the same code that is on main
+  5. pytest -q passes (one pre-existing flaky failure in test_units_reconfigure
+     is acceptable; everything else must pass)
+
+Report confirmed bugs separately from open questions; ask before fixing
+anything ambiguous.
+```
+
+</details>
+
+The skill assumes the paper PDF is on disk under `papers/`. Abstract-only reproductions are unsupported by SKILL Hard rule #2 — they have produced bad reproductions in the past — and the skill will stop and surface the gap rather than guess.
+
+### 👤 If you are a human developer
+
+You can drive every part of the framework by hand. The skill is a convenience layer on top of the same Python that you write directly when you choose to. The smallest end-to-end addition without any AI involvement is:
+
+**1. Define a new force class.** One file in `forces/`, subclass `forceField`, declare `requires_full_list` and `PREFLIGHT_FIELDS`, implement `updateOneF_reciprocal` (or `updateOneF_nonreciprocal`):
+
+```python
+# forces/my_potential.py
+from constSet import *
+from forces.base import forceField
+
+
+@ti.data_oriented
+class MyPotential(forceField):
+    requires_full_list = True
+    PREFLIGHT_FIELDS = ("T0", "rho", "N", "steps")
+
+    def __init__(self, sigma, eps):
+        self.sigma = float(sigma)
+        self.eps = float(eps)
+        self.reciprocal = True
+
+    @ti.func
+    def updateOneF_reciprocal(self, i: ti.i32, j: ti.i32):
+        rij = self.searchBox.applyMic(self.atomSystem.pos[j] - self.atomSystem.pos[i])
+        r = rij.norm()
+        if r * r <= self.cutoffSquare:
+            # f_mag = -dV/dr; example here is a soft-core 1/r^4 well.
+            f_mag = self.eps * self.sigma**4 / r**5
+            self.atomSystem.force[i] += -f_mag * (rij / r)
+            U_pair = self.eps * self.sigma**4 / (3.0 * r**3)
+            self.atomSystem.pe_per_atom[i] += 0.5 * U_pair
+```
+
+**2. Register the class** in two places — one local, one global:
+
+```python
+# forces/__init__.py — local registry, used by direct imports
+from forces.my_potential import MyPotential
+
+FORCE_REGISTRY: dict[str, type] = {
+    "lennard_jones":          lennardJones,
+    "er_plasma":              ERPotential,
+    "hertzian_nonreciprocal": HertzianNonreciprocal,
+    "kalj":                   KobAndersenLJ,
+    "my_potential":           MyPotential,    # ← new line
+}
+
+# tools/registry.py — single forwarding station
+_REGISTRY: dict[str, str] = {
+    # ... existing entries ...
+    "MyPotential": "forces.my_potential:MyPotential",
+}
+```
+
+The regression test `tests/test_skill_regression.py:test_registry_local_init_sync` will fail loudly the next time `pytest -q` runs if either side drifts.
+
+**3. Write a campaign config** that references the new force_type and validate it before launching anything:
+
+```bash
+cat > configs/plan_my_potential.json << 'EOF'
+{
+  "_comment": "Smoke run for MyPotential — verify the kernel compiles and ships.",
+  "_force_type_doc": "references/force_types.md (pending §N for my_potential)",
+  "_units_doc": "reduced_lj",
+  "campaign": [{
+    "force_type": "my_potential",
+    "tag": "mp_smoke",
+    "T0": 1.0,
+    "N": 200,
+    "steps": 5000,
+    "stride": 50,
+    "ndim": 3,
+    "units_regime": "reduced_lj"
+  }],
+  "pipeline": {"preflight": true, "smoke": true, "smoke_steps": 100,
+               "production": true, "halt_on_fail": true, "max_parallel": 1}
+}
+EOF
+python scripts/validate_config.py configs/plan_my_potential.json --strict
+python scripts/run_experiment.py configs/plan_my_potential.json
+```
+
+The validator will reject the config until you have also extended the schema enum, the dispatcher branch in `scripts/run_experiment.py:_invoke_md`, and the `check_force_type_specific` branch in `scripts/validate_config.py` — these are the steps that the AI skill walks through automatically and that you would do by hand here. The full per-step recipe is in `references/force_types.md §4 "Adding a new force type"`; the file numbers and registration points line up exactly with the AI workflow above.
+
+For an integrator extension the path is parallel: subclass `IntegratorBase` in `integrators/`, declare `REQUIRED_KWARGS` and `OPTIONAL_KWARGS`, implement `inteBegin`, register in `INTEGRATOR_REGISTRY` + `_REGISTRY`, extend the schema's `integrator` enum, and (optionally) add a stability rule to `check_integrator_specific`. `integrators/baoab_drag.py` is the simplest reference; `integrators/baoab_langevin.py` shows the Wiener-noise variant including the `(1 − α²)·k_B·T/m` FD prefactor. The full 9-step recipe is in `references/force_types.md §5b`.
+
+Either way — AI or human — the same regression tests gate the same contracts, the same registry holds the same classes, and the same `pytest -q` says yes or no.
 
 ---
 
@@ -328,7 +498,7 @@ The campaign is the canonical example of the joint **8-step force extension** (`
 ## Project layout
 
 ```
-md-for-dummies/
+agentic-md-for-dummies/
 ├── README.md                       this file
 ├── ARCHITECTURE.md                 the 4-layer + 6-phase spec (~400 lines)
 ├── LICENSE                         MIT

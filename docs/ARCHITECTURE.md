@@ -1,7 +1,7 @@
-# md-for-dummies Architecture
+# agentic-md-for-dummies Architecture
 
-> 2026-05-08 — Framework reorganization spec.
-> Reading order: §1 layers → §2 phase flow → §3 contracts → §4 templates → §5 decisions → §6 migration.
+> v0.2.0 — Framework reorganization spec.
+> Reading order: §1 layers → §2 phase flow → §3 contracts → §4 templates → §5 decisions → §6 enforcement gates → §7 single-page reference.
 
 ---
 
@@ -14,7 +14,8 @@ The framework is **strictly layered**. Each layer talks ONLY to the layer below 
 ║  Layer 4 — CONFIG (data, no code)                                     ║   ←  USER WRITES
 ║  configs/plan_*.json  (YAML supported via _ext field, JSON canonical) ║      ALL OF THIS
 ║  • Multi-run campaign list                                            ║
-║  • Pipeline phases (preflight/smoke/production/visualize/analyze/agg) ║
+║  • Pipeline phases (preflight → smoke → production → analyze → viz →  ║
+║    aggregate)                                                         ║
 ║  • Class-name registration: analyzer / visualizer / force_type        ║
 ║  • Pass criteria + budget guards                                      ║
 ╠══════════════════════════════════════════════════════════════════════╣
@@ -39,7 +40,7 @@ The framework is **strictly layered**. Each layer talks ONLY to the layer below 
 ║  tools/registry.py            — name → class lookup                    ║
 ║  Provides:                                                             ║
 ║  • Phase scheduling (validate → preflight → smoke → production →      ║
-║    visualize → aggregate)                                              ║
+║    analyze (3.4) → visualize (3.5) → aggregate (4))                    ║
 ║  • Parallel scheduling (LPT, max_parallel)                             ║
 ║  • Class-name dispatch via registry                                    ║
 ║  • Manifest writing, log redirection, halt-on-fail                     ║
@@ -122,10 +123,20 @@ USER:  python scripts/run_experiment.py configs/plan_X.json
 ║                                │                                      ║       │
 ║                                ▼                                      ║       │
 ║  ┌──────────────────────────────────────────────────────────────┐     ║       │
-║  │ Phase 3.5: VISUALIZE (optional, class-dispatched, NEW)       │     ║       │
+║  │ Phase 3.4: ANALYZE (optional, class-dispatched)              │     ║       │
+║  │   if pipeline.analyze and pipeline.analyzer_class:           │     ║       │
+║  │     AnalyzerCls = registry.resolve(pipeline.analyzer_class)  │     ║       │
+║  │     AnalyzerCls.full_analysis(run_dir, **params)             │     ║       │
+║  │     -- side effect: writes <run_dir>/report.md (Hard rule #9)│     ║       │
+║  └─────────────────────────────┬────────────────────────────────┘     ║       │
+║                                │                                      ║       │
+║                                ▼                                      ║       │
+║  ┌──────────────────────────────────────────────────────────────┐     ║       │
+║  │ Phase 3.5: VISUALIZE (optional, class-dispatched)            │     ║       │
 ║  │   if pipeline.visualize.enabled:                             │     ║       │
 ║  │     VizCls = registry.resolve(pipeline.visualize.class)      │     ║       │
-║  │     VizCls(**params).render(run_dir)                         │     ║       │
+║  │     VizCls.render(run_dir, **params)  -- staticmethod-first  │     ║       │
+║  │     -- side effect: writes <run_dir>/figN_*.png (Hard rule #9)│    ║       │
 ║  └─────────────────────────────┬────────────────────────────────┘     ║       │
 ║                                │                                      ║       │
 ║                                ▼                                      ║       │
@@ -288,10 +299,12 @@ The framework ships templates at `.claude/skills/paper-to-experiment/templates/`
 | Goal | Copy this template | Save as |
 |------|--------------------|---------|
 | New paper (Layer 3 adapter) | `templates/adapter_run.py.template` | `<topic>_run.py` (project root) |
+| New force class | `templates/force_class.py.template` | `forces/<your_force>.py` |
+| New integrator scheme | `templates/integrator.py.template` | `integrators/<your_scheme>.py` |
 | New analyzer | `templates/analyzer.py.template` | `tools/analyzers/<x>.py` |
-| New visualizer | `templates/visualizer.py.template` | `tools/visualizers/<x>.py` |
 | New plotter | `templates/plotter.py.template` | `tools/plotters/<x>.py` |
-| New force class | `templates/force_class.py.template` | save as `forces/<your_force>.py` |
+| New aggregator | `templates/aggregator.py.template` | `tools/aggregators/<x>.py` |
+| New visualizer | `templates/visualizer.py.template` | `tools/visualizers/<x>.py` |
 
 Each template has ALL contract requirements as `# TODO:` markers. Filling them in order produces a working, contract-compliant component.
 
@@ -348,22 +361,29 @@ Phase 1:   preflight                         (resource estimate)
 Phase 2:   smoke (100 steps)                (catches crashes)
 Phase 3:   production (parallel)            (calls adapter via subprocess)
    └── adapter writes manifest.json + .h5   (sole communication channel)
-Phase 3.5: visualize  (NEW, registry-dispatched, per-run, optional)
+Phase 3.4: analyze    (registry-dispatched, per-run, optional; writes report.md)
+Phase 3.5: visualize  (registry-dispatched, per-run, optional; writes figN_*.png)
 Phase 4:   aggregate  (registry-dispatched, cross-run, optional)
-              ├── PRXAggregator  → fig1/fig2/ratio/stability + master.md
-              └── ERAggregator   → fig11-17 + extended_results.md
+              ├── PRXAggregator       → fig1/fig2/ratio/stability + master.md
+              ├── ERAggregator        → fig11-17 + extended_results.md
+              └── PedersenAggregator  → rdf/msd overlays + KA-LJ campaign report
 
-Adapter contract:   §3.1 + manifest §3.2
-Analyzer contract:  full_analysis(run_dir, **params) -> dict
-Visualizer contract: __init__(**params) → .render(run_dir)
-Plotter contract:    static fig_<name>(records, out_path, **params)
+Adapter contract:    §3.1 + manifest §3.2
+Analyzer contract:   full_analysis(run_dir, **params) -> dict + writes report.md
+Plotter contract:    static render(run_dir, **params) -> writes figN_*.png
+Aggregator contract: static aggregate(run_dirs, output, plots, title, **params)
+Visualizer contract: __init__(**params) → .render(run_dir)   (legacy class-instance form)
 
-To add a new paper:    copy templates/adapter_run.py.template
-To add an analyzer:    copy templates/analyzer.py.template
-To add a viz:          copy templates/visualizer.py.template
-To add a force class:  copy templates/force_class.py.template + 8-step process
-                       in references/force_types.md §4
-To add a sweep only:   write configs/plan_X.json + python scripts/run_experiment.py
+To add a new paper:       copy templates/adapter_run.py.template
+To add a force class:     copy templates/force_class.py.template + 8-step process
+                          in references/force_types.md §4
+To add an integrator:     copy templates/integrator.py.template + 9-step process
+                          in references/force_types.md §5b
+To add an analyzer:       copy templates/analyzer.py.template
+To add a plotter:         copy templates/plotter.py.template
+To add an aggregator:     copy templates/aggregator.py.template
+To add a viz:             copy templates/visualizer.py.template
+To add a sweep only:      write configs/plan_X.json + python scripts/run_experiment.py
 ```
 
 ---
