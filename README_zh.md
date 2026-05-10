@@ -117,7 +117,7 @@ $ python scripts/run_experiment.py configs/plan_prx_t0sweep.json
 5. aggregate    (可选，跨 run 出图 + 报告)
 ```
 
-完整架构规范见 [`ARCHITECTURE.md`](ARCHITECTURE.md)。
+完整架构规范见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ---
 
@@ -505,9 +505,12 @@ Skill 会带你走 `force_types.md §4` 文档化的八步扩展流程：
 ```
 agentic-md-for-dummies/
 ├── README.md / README_zh.md         本文件（英 / 中）
-├── ARCHITECTURE.md                  四层 + 六阶段规范（约 400 行）
 ├── LICENSE                          MIT
 ├── requirements.txt
+│
+├── docs/
+│   ├── ARCHITECTURE.md              四层 + 六阶段规范（约 400 行）
+│   └── images/                      复现图（精选 8 张）
 │
 ├── .claude/skills/
 │   ├── paper-to-experiment/         驱动整个工作流的 AI skill
@@ -547,8 +550,7 @@ agentic-md-for-dummies/
 ├── constSet.py                      Layer 1 —— 单位（reduced / macro）
 ├── toolClass.py                     tools/ 拆分后的向后兼容 shim
 │
-├── tests/                           pytest 契约 + 回归测试
-└── docs/images/                     复现图（精选 8 张）
+└── tests/                           pytest 契约 + 回归测试
 ```
 
 ---

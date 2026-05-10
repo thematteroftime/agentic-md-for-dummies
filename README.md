@@ -116,7 +116,7 @@ A single run goes through six numbered phases:
 5. aggregate         (optional, cross-run figures + report)
 ```
 
-Full architecture spec: [`ARCHITECTURE.md`](ARCHITECTURE.md).
+Full architecture spec: [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md).
 
 ---
 
@@ -503,10 +503,13 @@ The campaign is the canonical example of the joint **8-step force extension** (`
 
 ```
 agentic-md-for-dummies/
-├── README.md                       this file
-├── ARCHITECTURE.md                 the 4-layer + 6-phase spec (~400 lines)
+├── README.md / README_zh.md        this file (English / 简体中文)
 ├── LICENSE                         MIT
 ├── requirements.txt
+│
+├── docs/
+│   ├── ARCHITECTURE.md             the 4-layer + 6-phase spec (~400 lines)
+│   └── images/                     reproduction figures (8 selected)
 │
 ├── .claude/skills/
 │   ├── paper-to-experiment/        the AI skill that drives the workflow
@@ -536,6 +539,7 @@ agentic-md-for-dummies/
 │
 ├── prx_nonreciprocal_run.py        Layer 3 adapter — PRX 2015
 ├── er_plasma_run.py                Layer 3 adapter — PRL 2008
+├── pedersen_kalj_run.py            Layer 3 adapter — PRL 2018
 │
 ├── forces/                         Layer 1 — one file per force class (HertzianNonreciprocal, ERPotential, LJ, KobAndersenLJ)
 ├── integrators/                    Layer 1 — one file per integrator scheme (BAOABDrag, BAOABLangevin)
@@ -545,8 +549,7 @@ agentic-md-for-dummies/
 ├── constSet.py                     Layer 1 — units (reduced / macro)
 ├── toolClass.py                    backward-compat shim for the tools/ split
 │
-├── tests/                          pytest contract + regression tests
-└── docs/images/                    reproduction figures (8 selected)
+└── tests/                          pytest contract + regression tests
 ```
 
 ---
